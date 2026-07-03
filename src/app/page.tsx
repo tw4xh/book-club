@@ -21,6 +21,25 @@ export default async function HomePage({
         <div className="text-5xl">📚</div>
         <h1 className="mt-4 text-2xl font-bold">{t("guest.title")}</h1>
         <p className="mt-3 max-w-md text-stone-600">{t("guest.body")}</p>
+        <div className="card mt-6 max-w-md p-4 text-left">
+          <h2 className="text-base font-semibold text-stone-800">
+            {t("guest.missionTitle")}
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-stone-600">
+            {t("guest.missionBody")}
+          </p>
+          <p className="mt-3 text-sm leading-6 text-stone-600">
+            {t("guest.openSource")}{" "}
+            <a
+              href="https://github.com/tw4xh/book-club"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium text-brand-600 underline-offset-2 hover:underline"
+            >
+              {t("guest.github")}
+            </a>
+          </p>
+        </div>
         <div className="mt-6 flex flex-col gap-2 sm:flex-row">
           <Link href="/register" className="btn-primary">
             {t("guest.registerCta")}

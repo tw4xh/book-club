@@ -415,6 +415,7 @@ export async function importBooksFromSheetAction(formData: FormData) {
       normalizeZip(value(["location_zip", "zip", "zipcode", "存放邮编", "邮编"])) ??
       user.home_zip;
     const remoteCover = value(["cover_image_url", "cover", "封面", "封面链接"]);
+    const notes = buildImportedBookNotes(value);
 
     createBook({
       group_id: groupId,
@@ -422,13 +423,13 @@ export async function importBooksFromSheetAction(formData: FormData) {
       isbn: value(["isbn"]),
       title,
       author: value(["author", "作者"]),
-      language: value(["language", "语言"]),
+      language: value(["language", "语言", "图书语言"]),
       cover_image_url:
         remoteCover && /^https:\/\//.test(remoteCover) ? remoteCover : null,
       age_range: value(["age_range", "age", "适读年龄"]),
       category: value(["category", "分类"]),
       condition: value(["condition", "成色"]),
-      notes: value(["notes", "note", "备注"]),
+      notes,
       share_mode: shareMode,
       deposit: shareMode === "lend" ? value(["deposit", "押金"]) : null,
       visible_to_others:
@@ -514,6 +515,26 @@ function cell(row: string[], headers: string[], names: string[]): string | null 
   if (index < 0) return null;
   const value = row[index]?.trim();
   return value ? value : null;
+}
+
+function buildImportedBookNotes(
+  value: (names: string[]) => string | null
+): string | null {
+  const explicitNotes = value(["notes", "note", "备注"]);
+  const importedFields = [
+    ["阅读状态", value(["阅读状态", "reading_status"])],
+    ["字数/词汇量", value(["字数/词汇量", "字数", "词汇量", "word_count"])],
+    ["页数", value(["页数", "pages", "page_count"])],
+    ["AR", value(["ar"])],
+    ["Lexile", value(["lexile"])],
+    ["出版社", value(["出版社", "publisher"])],
+    ["录入日期", value(["录入日期", "created_date", "imported_at"])],
+  ];
+  const importedNotes = importedFields
+    .filter(([, v]) => Boolean(v))
+    .map(([label, v]) => `${label}: ${v}`);
+  const allNotes = [explicitNotes, ...importedNotes].filter(Boolean);
+  return allNotes.length > 0 ? allNotes.join("\n") : null;
 }
 
 function parseShareMode(value: string | null): BookShareMode {

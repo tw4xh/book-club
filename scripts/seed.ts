@@ -1,7 +1,7 @@
 /**
- * Seeds the first "Chinese moms in Minnesota" club with a few members and books
- * so the catalog isn't empty for testing. Safe to run multiple times: it keys
- * off a fixed invite code and skips seeding if that club already exists.
+ * Seeds demo book clubs, members, books, chats, requests, and reading lists so
+ * the app isn't empty for testing. Safe to run multiple times: it keys off fixed
+ * invite codes and skips seeding if any demo club already exists.
  *
  * Run with: npm run seed
  */
@@ -30,6 +30,7 @@ import { hashPassword } from "../src/lib/password";
 import type { BookShareMode, User } from "../src/lib/types";
 
 const SEED_CODE = "MNMOMS";
+const SEED_GROUP_CODES = [SEED_CODE, "TWINEN", "BIGKIDS", "WEEKEND"];
 const DEMO_PASSWORD = "demo1234";
 const SEED_EMAILS = [
   "lily@example.com",
@@ -40,13 +41,39 @@ const SEED_EMAILS = [
   "anna@example.com",
 ];
 
+function createSeedGroup(
+  db: ReturnType<typeof getDb>,
+  input: {
+    name: string;
+    type: string;
+    inviteCode: string;
+    policy: string;
+  }
+) {
+  const id = crypto.randomUUID();
+  db.prepare(
+    `INSERT INTO groups (id, name, type, policy, invite_code, created_at) VALUES (?, ?, ?, ?, ?, ?)`
+  ).run(
+    id,
+    input.name,
+    input.type,
+    input.policy,
+    input.inviteCode,
+    new Date().toISOString()
+  );
+  return id;
+}
+
 function main() {
   const db = getDb();
 
-  if (getGroupByInviteCode(SEED_CODE)) {
+  if (SEED_GROUP_CODES.some((code) => getGroupByInviteCode(code))) {
     if (process.env.SEED_RESET === "1") {
       const tx = db.transaction(() => {
-        db.prepare("DELETE FROM groups WHERE invite_code = ?").run(SEED_CODE);
+        const groupPlaceholders = SEED_GROUP_CODES.map(() => "?").join(", ");
+        db.prepare(
+          `DELETE FROM groups WHERE invite_code IN (${groupPlaceholders})`
+        ).run(...SEED_GROUP_CODES);
         const placeholders = SEED_EMAILS.map(() => "?").join(", ");
         db.prepare(`DELETE FROM users WHERE email IN (${placeholders})`).run(
           ...SEED_EMAILS
@@ -138,6 +165,36 @@ function main() {
       u.id === lily.id ? "admin" : "member",
       new Date().toISOString()
     );
+  }
+
+  const englishGroupId = createSeedGroup(db, {
+    name: "双城英文启蒙交换群",
+    type: "English reading · Twin Cities",
+    inviteCode: "TWINEN",
+    policy:
+      "适合想交换英文绘本、分级读物和 phonics 资料的家庭。请标注级别，借阅书建议 2-3 周归还。",
+  });
+  const bigKidsGroupId = createSeedGroup(db, {
+    name: "明州大孩子中文阅读社",
+    type: "Chinese reading · 7+ kids",
+    inviteCode: "BIGKIDS",
+    policy: "面向 7 岁以上孩子的中文章节书、漫画和名著。欢迎分享孩子真实读后感。",
+  });
+  const weekendGroupId = createSeedGroup(db, {
+    name: "周末图书漂流站",
+    type: "Weekend swaps · Local pickup",
+    inviteCode: "WEEKEND",
+    policy: "周末线下交换用的小群。请在聊天里约好地点时间，传阅书读完尽快转给下一位。",
+  });
+
+  for (const u of [lily, may, anna]) {
+    addMembership(u.id, englishGroupId, u.id === anna.id ? "admin" : "member");
+  }
+  for (const u of [lily, grace, qing, wei]) {
+    addMembership(u.id, bigKidsGroupId, u.id === qing.id ? "admin" : "member");
+  }
+  for (const u of [wei, may, qing, anna]) {
+    addMembership(u.id, weekendGroupId, u.id === wei.id ? "admin" : "member");
   }
 
   type SeedBook = {
@@ -400,6 +457,121 @@ function main() {
     })
   );
 
+  const englishBooks = [
+    createBook({
+      group_id: englishGroupId,
+      owner_user_id: anna.id,
+      title: "Oxford Reading Tree Level 1+",
+      author: "Roderick Hunt",
+      language: "英文",
+      age_range: "4-6 岁",
+      category: "英文分级",
+      condition: "九成新",
+      share_mode: "lend",
+      deposit: "$8",
+      current_location_area: anna.home_area,
+      location_zip: anna.home_zip,
+      notes: "适合刚开始 phonics 和 sight words 的孩子。",
+    }),
+    createBook({
+      group_id: englishGroupId,
+      owner_user_id: may.id,
+      title: "Pete the Cat: I Love My White Shoes",
+      author: "Eric Litwin",
+      language: "英文",
+      age_range: "3-6 岁",
+      category: "英文绘本",
+      condition: "八成新",
+      share_mode: "flow",
+      current_location_area: may.home_area,
+      location_zip: may.home_zip,
+    }),
+    createBook({
+      group_id: englishGroupId,
+      owner_user_id: lily.id,
+      title: "Elephant & Piggie: Today I Will Fly!",
+      author: "Mo Willems",
+      language: "英文",
+      age_range: "4-7 岁",
+      category: "桥梁书",
+      condition: "九成新",
+      share_mode: "flow",
+      current_location_area: lily.home_area,
+      location_zip: lily.home_zip,
+    }),
+  ];
+
+  createBook({
+    group_id: bigKidsGroupId,
+    owner_user_id: qing.id,
+    title: "怪杰佐罗力：神秘的飞机",
+    author: "原裕",
+    language: "中文",
+    age_range: "7-10 岁",
+    category: "章节书",
+    condition: "九成新",
+    share_mode: "flow",
+    isbn: "9787558328558",
+    current_location_area: qing.home_area,
+    location_zip: qing.home_zip,
+    notes: "测试中文 ISBN 自动封面数据源时也可以扫这本。",
+  });
+  createBook({
+    group_id: bigKidsGroupId,
+    owner_user_id: grace.id,
+    title: "林汉达中国历史故事集",
+    author: "林汉达",
+    language: "中文",
+    age_range: "9-14 岁",
+    category: "历史",
+    condition: "八成新",
+    share_mode: "lend",
+    deposit: "$10",
+    current_location_area: grace.home_area,
+    location_zip: grace.home_zip,
+  });
+  createBook({
+    group_id: bigKidsGroupId,
+    owner_user_id: wei.id,
+    title: "可怕的科学：经典数学系列",
+    author: "卡佳坦·波斯基特",
+    language: "中文",
+    age_range: "9-14 岁",
+    category: "科普",
+    condition: "七成新",
+    share_mode: "flow",
+    current_location_area: wei.home_area,
+    location_zip: wei.home_zip,
+  });
+
+  createBook({
+    group_id: weekendGroupId,
+    owner_user_id: wei.id,
+    title: "小熊宝宝绘本",
+    author: "佐佐木洋子",
+    language: "中文",
+    age_range: "0-3 岁",
+    category: "绘本",
+    condition: "七成新",
+    share_mode: "flow",
+    current_location_area: wei.home_area,
+    location_zip: wei.home_zip,
+  });
+  createBook({
+    group_id: weekendGroupId,
+    owner_user_id: anna.id,
+    title: "Peppa Pig 双语故事",
+    author: "Ladybird",
+    language: "中英双语",
+    age_range: "3-6 岁",
+    category: "双语绘本",
+    condition: "八成新",
+    share_mode: "lend",
+    deposit: "$5",
+    current_location_area: anna.home_area,
+    location_zip: anna.home_zip,
+  });
+
   const byTitle = (title: string) => {
     const book = created.find((b) => b.title === title);
     if (!book) throw new Error(`Seed book not found: ${title}`);
@@ -424,6 +596,7 @@ function main() {
     5,
     "厚但是很好翻，适合查知识点。"
   );
+  addBookReview(englishBooks[0].id, lily.id, 4, "分级很清楚，适合每天读一点。");
 
   // Make Wei's flow book "神奇校车" already pass on to Grace, so its page shows
   // both the current holder (Grace) and the original owner (Wei).
@@ -480,6 +653,12 @@ function main() {
   );
   postGroupMessage(groupId, qing.id, "我加了几本大孩子看的章节书，适合 8 岁以上。");
   postGroupMessage(groupId, anna.id, "如果有人想练英文阅读，我有牛津树和幼儿园课本。");
+  postGroupMessage(englishGroupId, anna.id, "这个群主要交换英文启蒙和分级读物。");
+  postGroupMessage(englishGroupId, may.id, "我家 Pete the Cat 可以传阅，适合唱着读。");
+  postGroupMessage(bigKidsGroupId, qing.id, "大孩子中文阅读社开张啦，欢迎推荐章节书。");
+  postGroupMessage(bigKidsGroupId, grace.id, "历史类和科普类书我家孩子最近很喜欢。");
+  postGroupMessage(weekendGroupId, wei.id, "周末图书漂流站可以用来约线下交换。");
+  postGroupMessage(weekendGroupId, anna.id, "我周六下午会去 St. Paul 图书馆附近。");
 
   // Direct message threads.
   sendDirectMessage(wei.id, lily.id, "你好 Lily，好饿的毛毛虫还能借吗？");
@@ -575,10 +754,58 @@ function main() {
     "熟悉故事，适合中文阅读挑战"
   );
 
+  const englishStarterListId = createBookList(
+    englishGroupId,
+    anna.id,
+    "英文启蒙第一阶段",
+    "适合 3-6 岁孩子建立英文阅读兴趣。"
+  );
+  addBookListItem(
+    englishStarterListId,
+    "Pete the Cat",
+    "Eric Litwin",
+    null,
+    "节奏感强"
+  );
+  addBookListItem(
+    englishStarterListId,
+    "Elephant & Piggie",
+    "Mo Willems",
+    null,
+    "对话简单，孩子容易跟读"
+  );
+  addBookListItem(
+    englishStarterListId,
+    "Oxford Reading Tree",
+    "Roderick Hunt",
+    null,
+    "分级体系清楚"
+  );
+
+  const historyListId = createBookList(
+    bigKidsGroupId,
+    qing.id,
+    "大孩子中文阅读挑战",
+    "章节书、历史和科普混合，帮助大孩子保持中文。"
+  );
+  addBookListItem(historyListId, "林汉达中国历史故事集", "林汉达", null, "故事性强");
+  addBookListItem(historyListId, "怪杰佐罗力", "原裕", null, "幽默，适合过渡到章节书");
+  addBookListItem(
+    historyListId,
+    "可怕的科学",
+    "卡佳坦·波斯基特",
+    null,
+    "科普也可以很好玩"
+  );
+
   console.log("Seeded club '明尼苏达华人妈妈读书会'");
-  console.log(`  Invite code: ${SEED_CODE}`);
+  console.log("  Invite codes:");
+  console.log(`    明尼苏达华人妈妈读书会: ${SEED_CODE}`);
+  console.log("    双城英文启蒙交换群: TWINEN");
+  console.log("    明州大孩子中文阅读社: BIGKIDS");
+  console.log("    周末图书漂流站: WEEKEND");
   console.log(`  Members: ${members.map((u) => u.name).join(", ")}`);
-  console.log(`  Books: ${books.length}`);
+  console.log(`  Main club books: ${books.length}`);
   console.log("  Test logins:");
   for (const u of members) console.log(`    ${u.email}`);
   console.log(`  Password: ${DEMO_PASSWORD}`);

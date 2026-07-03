@@ -374,7 +374,7 @@ const zh: Dict = {
   "import.urlLabel": "Google Sheet 链接",
   "import.urlPlaceholder": "https://docs.google.com/spreadsheets/d/...",
   "import.columns":
-    "支持表头：title/书名（必填）、author/作者、isbn、share_mode/分享方式、language/语言、age_range/适读年龄、category/分类、condition/成色、location_zip/邮编、notes/备注。",
+    "支持表头：书名（必填）、ISBN、作者、图书语言、分类、阅读状态、字数/词汇量、页数、ar、lexile、出版社、录入日期，也支持 title/author/language 等英文表头。",
   "import.submit": "导入表格里的图书",
   "import.success": "已导入 {count} 本；跳过 {skipped} 行。",
   "import.error.missing": "请填写 Google Sheet 链接。",
@@ -424,6 +424,11 @@ const zh: Dict = {
   "guest.title": "欢迎来到邻里书屋",
   "guest.body":
     "和身边的朋友一起，把家里的中文书分享出来：谁有什么书、书现在在谁那里，一目了然，不需要专人管理。",
+  "guest.missionTitle": "这个网站的初衷",
+  "guest.missionBody":
+    "邻里书屋希望做一个公益、非商业的小工具，帮助附近家庭把闲置中文书流动起来，让孩子更容易读到中文书，也让妈妈们少一点整理和协调负担。",
+  "guest.openSource": "项目代码开源，欢迎查看、改进，也欢迎其他社区复制使用：",
+  "guest.github": "GitHub 开源项目",
   "guest.registerCta": "注册开始使用",
   "guest.loginCta": "已有账号，去登录",
 };
@@ -820,7 +825,7 @@ const en: Dict = {
   "import.urlLabel": "Google Sheet link",
   "import.urlPlaceholder": "https://docs.google.com/spreadsheets/d/...",
   "import.columns":
-    "Supported headers: title (required), author, isbn, share_mode, language, age_range, category, condition, location_zip, notes.",
+    "Supported headers include the exported columns: 书名 (required), ISBN, 作者, 图书语言, 分类, 阅读状态, 字数/词汇量, 页数, ar, lexile, 出版社, 录入日期. English headers like title/author/language also work.",
   "import.submit": "Import books from sheet",
   "import.success": "Imported {count} books; skipped {skipped} rows.",
   "import.error.missing": "Please enter a Google Sheet link.",
@@ -873,6 +878,12 @@ const en: Dict = {
   "guest.title": "Welcome to Neighbor Bookshelf",
   "guest.body":
     "Together with the friends around you, share the books on your shelves: who has what, and where each book is right now, at a glance, with no librarian needed.",
+  "guest.missionTitle": "Why this site exists",
+  "guest.missionBody":
+    "Neighbor Bookshelf is intended as a nonprofit, community-first tool that helps nearby families keep Chinese books moving, so children can read more and parents spend less time coordinating by hand.",
+  "guest.openSource":
+    "The project is open source. You can review it, improve it, or reuse it for another community:",
+  "guest.github": "GitHub open source project",
   "guest.registerCta": "Register to get started",
   "guest.loginCta": "Already have an account? Log in",
 };

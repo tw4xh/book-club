@@ -1,8 +1,9 @@
 /**
  * Look up book metadata by ISBN so members barely have to type anything.
  *
- * Uses free, key-less sources: Google Books first (good coverage incl. Chinese
- * titles), then Open Library as a fallback. Returns null if nothing is found.
+ * Uses free, key-less sources first: Google Books, then Open Library. If both
+ * miss and TANSHU_API_KEY is configured, it falls back to Tanshu API for better
+ * Chinese book coverage. Returns null if nothing is found.
  */
 
 export interface BookMeta {
@@ -14,7 +15,7 @@ export interface BookMeta {
   cover_url: string | null;
   publisher: string | null;
   published_year: string | null;
-  source: "google" | "openlibrary";
+  source: "google" | "openlibrary" | "tanshu";
 }
 
 /** Strip to a clean 10- or 13-char ISBN, or null if it doesn't look valid. */
@@ -116,6 +117,47 @@ async function fetchOpenLibrary(isbn: string): Promise<BookMeta | null> {
   };
 }
 
+async function fetchTanshu(isbn: string): Promise<BookMeta | null> {
+  const key = process.env.TANSHU_API_KEY;
+  if (!key) return null;
+
+  const url = new URL("https://api2.tanshuapi.com/api/isbn_base/v1/index");
+  url.searchParams.set("key", key);
+  url.searchParams.set("isbn", isbn);
+
+  const res = await fetch(url, { headers: { Accept: "application/json" } });
+  if (!res.ok) return null;
+
+  const data = (await res.json()) as {
+    code?: number;
+    msg?: string;
+    data?: {
+      title?: string;
+      img?: string;
+      author?: string;
+      isbn?: string;
+      publisher?: string;
+      pubdate?: string;
+      summary?: string;
+    };
+  };
+  if (data.code !== 1 || !data.data?.title) return null;
+
+  const info = data.data;
+  return {
+    isbn: info.isbn ?? isbn,
+    title: info.title ?? null,
+    authors: info.author ? [info.author] : [],
+    // Tanshu's endpoint does not return a language code; most configured use is Chinese ISBN lookup.
+    language: "zh",
+    categories: [],
+    cover_url: forceHttps(info.img),
+    publisher: info.publisher ?? null,
+    published_year: info.pubdate?.match(/\d{4}/)?.[0] ?? null,
+    source: "tanshu",
+  };
+}
+
 export async function lookupIsbn(
   rawIsbn: string | null | undefined
 ): Promise<BookMeta | null> {
@@ -137,7 +179,14 @@ export async function lookupIsbn(
   }
 
   try {
-    return await fetchOpenLibrary(isbn);
+    const openLibrary = await fetchOpenLibrary(isbn);
+    if (openLibrary && openLibrary.title) return openLibrary;
+  } catch {
+    // fall through to Tanshu if configured
+  }
+
+  try {
+    return await fetchTanshu(isbn);
   } catch {
     return null;
   }
