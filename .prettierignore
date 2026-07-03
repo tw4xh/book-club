@@ -1,0 +1,10 @@
+node_modules
+.next
+out
+build
+data
+public/uploads
+coverage
+package-lock.json
+next-env.d.ts
+*.tsbuildinfo

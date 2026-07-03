@@ -1,0 +1,19 @@
+{
+  "name": "邻里书屋 Neighbor Bookshelf",
+  "short_name": "邻里书屋",
+  "description": "和身边的朋友一起分享中文书 · Share books with the friends around you",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fafaf9",
+  "theme_color": "#e11d48",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
