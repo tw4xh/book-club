@@ -102,6 +102,16 @@ export function BookLocationsMap({
   );
 }
 
+// A book counts as "reading" (shown transparent) only when it's actually out
+// with a borrower. A book sitting in its owner's own hands is available to
+// request, so it stays solid even if the owner marked it "reading".
+function isBeingRead(book: BookWithPeople): boolean {
+  return (
+    book.status === "reading" &&
+    book.current_holder_user_id !== book.owner_user_id
+  );
+}
+
 function bucketBooksByZip(books: BookWithPeople[]): LocationBucket[] {
   const byZip = new Map<string, LocationBucket>();
   for (const book of books) {
@@ -115,7 +125,7 @@ function bucketBooksByZip(books: BookWithPeople[]): LocationBucket[] {
       } else {
         existing.lendCount += 1;
       }
-      if (book.status === "reading") {
+      if (isBeingRead(book)) {
         existing.readingCount += 1;
       }
       existing.titles.push(book.title);
@@ -128,7 +138,7 @@ function bucketBooksByZip(books: BookWithPeople[]): LocationBucket[] {
         count: 1,
         lendCount: book.share_mode === "lend" ? 1 : 0,
         flowCount: book.share_mode === "flow" ? 1 : 0,
-        readingCount: book.status === "reading" ? 1 : 0,
+        readingCount: isBeingRead(book) ? 1 : 0,
         titles: [book.title],
       });
     }
