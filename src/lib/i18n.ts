@@ -527,7 +527,7 @@ const zh: Dict = {
 };
 
 const en: Dict = {
-  "app.name": "Neighbor Bookshelf",
+  "app.name": "Neighbor Book Club",
   "app.tagline": "Share books with the friends around you",
 
   "notif.title": "Notifications",
@@ -1017,12 +1017,12 @@ const en: Dict = {
   "join.agreeError": 'Please tick "agree" before joining.',
   "join.agreeAndJoin": 'Agree & join "{name}"',
 
-  "guest.title": "Welcome to Neighbor Bookshelf",
+  "guest.title": "Welcome to Neighbor Book Club",
   "guest.body":
     "Together with the friends around you, share the books on your shelves: who has what, and where each book is right now, at a glance, with no librarian needed.",
   "guest.missionTitle": "Why this site exists",
   "guest.missionBody":
-    "Neighbor Bookshelf is intended as a nonprofit, community-first tool that helps nearby families keep Chinese books moving, so children can read more and parents spend less time coordinating by hand.",
+    "Neighbor Book Club is intended as a nonprofit, community-first tool that helps nearby families keep Chinese books moving, so children can read more and parents spend less time coordinating by hand.",
   "guest.openSource":
     "The project is open source. You can review it, improve it, or reuse it for another community:",
   "guest.github": "GitHub open source project",
@@ -1032,9 +1032,9 @@ const en: Dict = {
     "Demo data has not been created yet. Run npm run seed:reset first.",
   "guest.loginCta": "Already have an account? Log in",
 
-  "donate.title": "Support Neighbor Bookshelf",
+  "donate.title": "Support Neighbor Book Club",
   "donate.body":
-    "Neighbor Bookshelf is intended to stay nonprofit and open source. Donations help cover domain, database, book metadata APIs, deployment, and other necessary operating costs.",
+    "Neighbor Book Club is intended to stay nonprofit and open source. Donations help cover domain, database, book metadata APIs, deployment, and other necessary operating costs.",
   "donate.paypal": "PayPal",
   "donate.venmo": "Venmo",
   "donate.wechat": "WeChat",

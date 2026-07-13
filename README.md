@@ -1,4 +1,4 @@
-# 邻里书屋 · Neighbor Bookshelf
+# 邻里书屋 · Neighbor Book Club
 
 A mobile-first, bilingual (简体中文 / English) web app that lets a community group
 share physical books. It's built for Chinese moms in the US sharing Chinese
