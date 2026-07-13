@@ -6,7 +6,6 @@ import type { BookStatus } from "@/lib/types";
 import { BookCard } from "@/components/BookCard";
 import { BookLocationsMap } from "@/components/BookLocationsMap";
 import { CopyText } from "@/components/CopyText";
-import { demoLoginAction } from "@/app/actions";
 
 type DonationMethod =
   | { type: "link"; label: string; href: string }
@@ -113,7 +112,6 @@ export default async function HomePage({
   const { user, activeGroup } = await getSessionContext();
   const donations = donationMethods(t);
   const sp = await searchParams;
-  const demoStatus = typeof sp.demo === "string" ? sp.demo : "";
 
   if (!user) {
     return (
@@ -141,18 +139,10 @@ export default async function HomePage({
           </p>
         </div>
         <DonationCard methods={donations} t={t} className="mt-4 max-w-md" />
-        {demoStatus === "missing" ? (
-          <p className="mt-4 max-w-md rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-700">
-            {t("guest.demoMissing")}
-          </p>
-        ) : null}
         <div className="mt-6 flex flex-col gap-2 sm:flex-row">
           <Link href="/register" className="btn-primary">
             {t("guest.registerCta")}
           </Link>
-          <form action={demoLoginAction}>
-            <button className="btn-secondary w-full">{t("guest.demoCta")}</button>
-          </form>
           <Link href="/login" className="btn-secondary">
             {t("guest.loginCta")}
           </Link>
