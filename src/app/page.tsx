@@ -12,6 +12,9 @@ type DonationMethod =
   | { type: "link"; label: string; href: string }
   | { type: "copy"; label: string; value: string };
 
+// Public project donation link. Used unless overridden by env config.
+const DEFAULT_PAYPAL_URL = "https://paypal.me/neighborbookshelf";
+
 function donationMethods(t: ReturnType<typeof createTranslator>): DonationMethod[] {
   const methods: DonationMethod[] = [];
   if (process.env.DONATION_PAYPAL_EMAIL) {
@@ -20,11 +23,11 @@ function donationMethods(t: ReturnType<typeof createTranslator>): DonationMethod
       label: t("donate.paypal"),
       value: process.env.DONATION_PAYPAL_EMAIL,
     });
-  } else if (process.env.DONATION_PAYPAL_URL) {
+  } else {
     methods.push({
       type: "link",
       label: t("donate.paypal"),
-      href: process.env.DONATION_PAYPAL_URL,
+      href: process.env.DONATION_PAYPAL_URL || DEFAULT_PAYPAL_URL,
     });
   }
   if (process.env.DONATION_VENMO_ID) {
