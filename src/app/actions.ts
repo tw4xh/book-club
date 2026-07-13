@@ -6,6 +6,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
+  clearActiveGroup,
   createSession,
   destroySession,
   getCurrentUser,
@@ -14,6 +15,8 @@ import {
 import { LOCALE_COOKIE } from "@/lib/i18n";
 import { hashPassword, verifyPassword } from "@/lib/password";
 import { normalizeZip } from "@/lib/geo";
+import { lookupIsbn } from "@/lib/books-api";
+import { createAssistantWantedRequest } from "@/lib/assistant";
 import { cookies } from "next/headers";
 import {
   addBookListItem,
@@ -21,6 +24,7 @@ import {
   addMembership,
   canBorrow,
   claimBook,
+  closeGroup,
   createPasswordResetToken,
   createBook,
   creditCostForBook,
@@ -29,12 +33,16 @@ import {
   createGroup,
   getBookById,
   getBookList,
+  getGroupById,
   getGroupByInviteCode,
+  getGroupsForUser,
   getUserByEmail,
   getMembership,
+  isLastGroupAdmin,
   notifyGroupMembers,
   postGroupMessage,
   rateBorrower,
+  removeMembership,
   resetPasswordWithToken,
   returnToOwner,
   sendDirectMessage,
@@ -45,8 +53,11 @@ import {
   setUserContactable,
   setUserPaymentHandles,
   setUserPasswordHash,
+  setUserProfile,
   toggleRequestInterest,
+  transferOwnedBooks,
   upsertUserByEmail,
+  withdrawOwnedBooks,
 } from "@/lib/repo";
 import type { BookShareMode, BookStatus } from "@/lib/types";
 
@@ -71,7 +82,7 @@ export async function loginAction(formData: FormData) {
     redirect(`/login?${params.toString()}`);
   }
 
-  const existing = getUserByEmail(email);
+  const existing = await getUserByEmail(email);
   if (!existing) {
     const params = new URLSearchParams({ error: "invalid_credentials" });
     if (next) params.set("next", next);
@@ -92,12 +103,27 @@ export async function loginAction(formData: FormData) {
       if (next) params.set("next", next);
       redirect(`/login?${params.toString()}`);
     }
-    setUserPasswordHash(existing.id, hashPassword(password));
+    await setUserPasswordHash(existing.id, hashPassword(password));
   }
 
   await createSession(existing.id);
 
   redirect(next ?? "/");
+}
+
+export async function demoLoginAction() {
+  const demoUser = await getUserByEmail("lily@example.com");
+  if (!demoUser) {
+    redirect("/?demo=missing");
+  }
+
+  await createSession(demoUser.id);
+  const groups = await getGroupsForUser(demoUser.id);
+  if (groups[0]) {
+    await setActiveGroup(groups[0].id);
+  }
+
+  redirect("/");
 }
 
 export async function registerAction(formData: FormData) {
@@ -116,13 +142,18 @@ export async function registerAction(formData: FormData) {
     if (next) params.set("next", next);
     redirect(`/register?${params.toString()}`);
   }
-  if (getUserByEmail(email)) {
+  if (!str(formData, "consent")) {
+    const params = new URLSearchParams({ error: "consent_required" });
+    if (next) params.set("next", next);
+    redirect(`/register?${params.toString()}`);
+  }
+  if (await getUserByEmail(email)) {
     const params = new URLSearchParams({ error: "email_exists" });
     if (next) params.set("next", next);
     redirect(`/register?${params.toString()}`);
   }
 
-  const user = upsertUserByEmail({
+  const user = await upsertUserByEmail({
     email,
     name,
     password_hash: hashPassword(password),
@@ -144,11 +175,11 @@ export async function logoutAction() {
 export async function requestPasswordResetAction(formData: FormData) {
   const email = str(formData, "email");
   if (!email) redirect("/forgot-password?sent=1");
-  const reset = createPasswordResetToken(email);
+  const reset = await createPasswordResetToken(email);
   const params = new URLSearchParams({ sent: "1" });
-  // In production this token should be emailed; in the local prototype we show
-  // it on the page so the flow can be tested without email infrastructure.
-  if (reset) {
+  // In production this token should be emailed. Only expose it locally so the
+  // reset flow can be tested without email infrastructure.
+  if (reset && process.env.NODE_ENV !== "production") {
     params.set("token", reset.token);
   }
   redirect(`/forgot-password?${params.toString()}`);
@@ -163,7 +194,7 @@ export async function resetPasswordAction(formData: FormData) {
   if (password.length < 6) {
     redirect(`/reset-password?token=${encodeURIComponent(token)}&error=weak_password`);
   }
-  const ok = resetPasswordWithToken(token, hashPassword(password));
+  const ok = await resetPasswordWithToken(token, hashPassword(password));
   if (!ok) {
     redirect("/reset-password?error=invalid_token");
   }
@@ -176,16 +207,32 @@ export async function setContactableAction(formData: FormData) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   const contactable = str(formData, "contactable") === "1";
-  setUserContactable(user.id, contactable);
+  await setUserContactable(user.id, contactable);
   revalidatePath("/", "layout");
   redirect("/groups");
+}
+
+export async function setProfileAction(formData: FormData) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  const name = str(formData, "name");
+  if (!name) redirect("/groups?profile=missing");
+  await setUserProfile(user.id, {
+    name,
+    wechat_nickname: str(formData, "wechat_nickname"),
+    contact: str(formData, "contact"),
+    home_area: str(formData, "home_area"),
+    home_zip: normalizeZip(str(formData, "home_zip")),
+  });
+  revalidatePath("/", "layout");
+  redirect("/groups?profile=success");
 }
 
 /** Save the payment handles others can use to thank you. */
 export async function setPaymentHandlesAction(formData: FormData) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  setUserPaymentHandles(user.id, {
+  await setUserPaymentHandles(user.id, {
     paypal: str(formData, "pay_paypal"),
     venmo: str(formData, "pay_venmo"),
     wechat: str(formData, "pay_wechat"),
@@ -214,9 +261,9 @@ export async function createGroupAction(formData: FormData) {
   const type = str(formData, "type");
   const policy = str(formData, "policy");
 
-  const group = createGroup(name, type, policy);
+  const group = await createGroup(name, type, policy);
   // The creator is the admin and implicitly accepts their own policy.
-  addMembership(user.id, group.id, "admin", new Date().toISOString());
+  await addMembership(user.id, group.id, "admin", new Date().toISOString());
   await setActiveGroup(group.id);
 
   revalidatePath("/", "layout");
@@ -229,15 +276,43 @@ export async function setGroupPolicyAction(formData: FormData) {
   if (!user) redirect("/login");
   const groupId = str(formData, "group_id");
   if (!groupId) return;
-  const membership = getMembership(user.id, groupId);
+  const membership = await getMembership(user.id, groupId);
   if (!membership || membership.role !== "admin") redirect("/groups");
 
   const policy = str(formData, "policy");
-  setGroupPolicy(groupId, policy);
+  await setGroupPolicy(groupId, policy);
   // Let every other member know the rules changed, with the new text attached.
-  notifyGroupMembers(groupId, user.id, "policy_changed", policy);
+  await notifyGroupMembers(groupId, user.id, "policy_changed", policy);
   revalidatePath("/", "layout");
   redirect("/groups");
+}
+
+export async function closeGroupAction(formData: FormData) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+
+  const groupId = str(formData, "group_id");
+  const confirmName = str(formData, "confirm_name");
+  if (!groupId) return;
+
+  const group = await getGroupById(groupId);
+  if (!group) redirect("/groups?close=missing");
+  const membership = await getMembership(user.id, groupId);
+  if (!membership || membership.role !== "admin") redirect("/groups");
+  if (confirmName !== group.name) {
+    redirect("/groups?close=confirm");
+  }
+
+  await closeGroup(groupId);
+  const remainingGroups = await getGroupsForUser(user.id);
+  if (remainingGroups.length > 0) {
+    await setActiveGroup(remainingGroups[0].id);
+  } else {
+    await clearActiveGroup();
+  }
+
+  revalidatePath("/", "layout");
+  redirect("/groups?close=success");
 }
 
 /**
@@ -251,11 +326,11 @@ export async function joinGroupAction(formData: FormData) {
   const code = str(formData, "code");
   if (!code) return;
 
-  const group = getGroupByInviteCode(code);
+  const group = await getGroupByInviteCode(code);
   if (!group) {
     redirect("/groups?error=notfound");
   }
-  if (getMembership(user.id, group.id)) {
+  if (await getMembership(user.id, group.id)) {
     // Already a member: just switch to it.
     await setActiveGroup(group.id);
     revalidatePath("/", "layout");
@@ -271,15 +346,15 @@ export async function confirmJoinAction(formData: FormData) {
 
   const code = str(formData, "code");
   if (!code) return;
-  const group = getGroupByInviteCode(code);
+  const group = await getGroupByInviteCode(code);
   if (!group) redirect("/groups?error=notfound");
 
-  if (!getMembership(user.id, group.id)) {
+  if (!(await getMembership(user.id, group.id))) {
     // Must tick the agreement box when the club has a policy.
     if (group.policy && str(formData, "agree") !== "1") {
       redirect(`/join/${group.invite_code}?error=agree`);
     }
-    addMembership(user.id, group.id, "member", new Date().toISOString());
+    await addMembership(user.id, group.id, "member", new Date().toISOString());
   }
   await setActiveGroup(group.id);
 
@@ -293,11 +368,34 @@ export async function switchGroupAction(formData: FormData) {
 
   const groupId = str(formData, "group_id");
   if (!groupId) return;
-  if (!getMembership(user.id, groupId)) return;
+  if (!(await getMembership(user.id, groupId))) return;
 
   await setActiveGroup(groupId);
   revalidatePath("/", "layout");
   redirect("/");
+}
+
+export async function leaveGroupAction(formData: FormData) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+
+  const groupId = str(formData, "group_id");
+  if (!groupId) return;
+  if (!(await getMembership(user.id, groupId))) redirect("/groups");
+  if (await isLastGroupAdmin(user.id, groupId)) {
+    redirect("/groups?leave=last_admin");
+  }
+
+  await removeMembership(user.id, groupId);
+  const remainingGroups = await getGroupsForUser(user.id);
+  if (remainingGroups.length > 0) {
+    await setActiveGroup(remainingGroups[0].id);
+  } else {
+    await clearActiveGroup();
+  }
+
+  revalidatePath("/", "layout");
+  redirect("/groups?leave=success");
 }
 
 // ---------------------------------------------------------------------------
@@ -329,14 +427,64 @@ async function saveCover(formData: FormData): Promise<string | null> {
   return `/uploads/${name}`;
 }
 
+type BookDraft = {
+  isbn: string | null;
+  title: string | null;
+  author: string | null;
+  language: string | null;
+  cover_image_url: string | null;
+  age_range: string | null;
+  category: string | null;
+  condition: string | null;
+  notes: string | null;
+  share_mode: BookShareMode;
+  deposit: string | null;
+  visible_to_others: boolean;
+  current_location_area: string | null;
+  location_zip: string | null;
+};
+
+function languageLabel(language: string | null): string | null {
+  if (!language) return null;
+  const lower = language.toLowerCase();
+  if (lower.startsWith("zh")) return "中文";
+  if (lower.startsWith("en")) return "English";
+  return language;
+}
+
+async function enrichBookDraftFromIsbn(draft: BookDraft): Promise<BookDraft> {
+  if (!draft.isbn) return draft;
+  const hasMissingApiField =
+    !draft.title ||
+    !draft.author ||
+    !draft.language ||
+    !draft.cover_image_url ||
+    !draft.category;
+  if (!hasMissingApiField) return draft;
+
+  const meta = await lookupIsbn(draft.isbn).catch(() => null);
+  if (!meta) return draft;
+
+  return {
+    ...draft,
+    isbn: draft.isbn ?? meta.isbn,
+    title: draft.title ?? meta.title,
+    author: draft.author ?? (meta.authors.length > 0 ? meta.authors.join(", ") : null),
+    language: draft.language ?? languageLabel(meta.language),
+    cover_image_url: draft.cover_image_url ?? meta.cover_url,
+    category: draft.category ?? meta.categories[0] ?? null,
+  };
+}
+
 export async function addBookAction(formData: FormData) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
   const groupId = str(formData, "group_id");
   const title = str(formData, "title");
-  if (!groupId || !title) return;
-  if (!getMembership(user.id, groupId)) return;
+  const isbn = str(formData, "isbn");
+  if (!groupId || (!title && !isbn)) return;
+  if (!(await getMembership(user.id, groupId))) return;
 
   const uploadedCover = await saveCover(formData);
   // Prefer an uploaded photo; otherwise fall back to a cover URL from ISBN lookup.
@@ -345,11 +493,10 @@ export async function addBookAction(formData: FormData) {
     uploadedCover ??
     (remoteCover && /^https:\/\//.test(remoteCover) ? remoteCover : null);
   const locationZip = normalizeZip(str(formData, "location_zip")) ?? user.home_zip;
+  const shareMode = str(formData, "share_mode") === "lend" ? "lend" : "flow";
 
-  createBook({
-    group_id: groupId,
-    owner_user_id: user.id,
-    isbn: str(formData, "isbn"),
+  const draft = await enrichBookDraftFromIsbn({
+    isbn,
     title,
     author: str(formData, "author"),
     language: str(formData, "language"),
@@ -358,13 +505,20 @@ export async function addBookAction(formData: FormData) {
     category: str(formData, "category"),
     condition: str(formData, "condition"),
     notes: str(formData, "notes"),
-    share_mode: str(formData, "share_mode") === "lend" ? "lend" : "flow",
-    deposit: str(formData, "share_mode") === "lend" ? str(formData, "deposit") : null,
+    share_mode: shareMode,
+    deposit: shareMode === "lend" ? str(formData, "deposit") : null,
     visible_to_others:
-      str(formData, "share_mode") !== "lend" ||
-      formData.get("visible_to_others") === "on",
+      shareMode !== "lend" || formData.get("visible_to_others") === "on",
     current_location_area: str(formData, "current_location_area") ?? user.home_area,
     location_zip: locationZip,
+  });
+  if (!draft.title) return;
+
+  await createBook({
+    group_id: groupId,
+    owner_user_id: user.id,
+    ...draft,
+    title: draft.title,
   });
 
   revalidatePath("/");
@@ -379,7 +533,8 @@ export async function importBooksFromSheetAction(formData: FormData) {
   const groupId = str(formData, "group_id");
   const sheetUrl = str(formData, "sheet_url");
   if (!groupId || !sheetUrl) redirect("/books/new?import=missing");
-  if (!getMembership(user.id, groupId)) redirect("/books/new?import=forbidden");
+  if (!(await getMembership(user.id, groupId)))
+    redirect("/books/new?import=forbidden");
 
   const csvUrl = googleSheetCsvUrl(sheetUrl);
   if (!csvUrl) redirect("/books/new?import=bad_url");
@@ -402,8 +557,9 @@ export async function importBooksFromSheetAction(formData: FormData) {
 
   for (const row of rows.slice(1, 101)) {
     const value = (names: string[]) => cell(row, headers, names);
+    const isbn = value(["isbn"]);
     const title = value(["title", "书名", "name", "book"]);
-    if (!title) {
+    if (!title && !isbn) {
       skipped += 1;
       continue;
     }
@@ -417,10 +573,8 @@ export async function importBooksFromSheetAction(formData: FormData) {
     const remoteCover = value(["cover_image_url", "cover", "封面", "封面链接"]);
     const notes = buildImportedBookNotes(value);
 
-    createBook({
-      group_id: groupId,
-      owner_user_id: user.id,
-      isbn: value(["isbn"]),
+    const draft = await enrichBookDraftFromIsbn({
+      isbn,
       title,
       author: value(["author", "作者"]),
       language: value(["language", "语言", "图书语言"]),
@@ -439,6 +593,17 @@ export async function importBooksFromSheetAction(formData: FormData) {
         value(["current_location_area", "area", "location", "区域", "当前存放区域"]) ??
         user.home_area,
       location_zip: locationZip,
+    });
+    if (!draft.title) {
+      skipped += 1;
+      continue;
+    }
+
+    await createBook({
+      group_id: groupId,
+      owner_user_id: user.id,
+      ...draft,
+      title: draft.title,
     });
     imported += 1;
   }
@@ -554,9 +719,9 @@ export async function claimBookAction(formData: FormData) {
   if (!user) redirect("/login");
   const bookId = str(formData, "book_id");
   if (!bookId) return;
-  const book = getBookById(bookId);
+  const book = await getBookById(bookId);
   if (!book) redirect("/");
-  if (!getMembership(user.id, book.group_id)) redirect("/");
+  if (!(await getMembership(user.id, book.group_id))) redirect("/");
   if (
     book.share_mode === "lend" &&
     book.visible_to_others === 0 &&
@@ -567,12 +732,16 @@ export async function claimBookAction(formData: FormData) {
   // Give-to-get: you must have shared enough books before you can take one.
   if (
     book.owner_user_id !== user.id &&
-    !canBorrow(user.id, book.group_id, creditCostForBook(bookId, book.share_mode))
+    !(await canBorrow(
+      user.id,
+      book.group_id,
+      await creditCostForBook(bookId, book.share_mode)
+    ))
   ) {
     redirect(`/books/${bookId}?error=needcredit`);
   }
 
-  claimBook(bookId, user.id);
+  await claimBook(bookId, user.id);
   revalidatePath(`/books/${bookId}`);
   revalidatePath("/shelf");
   revalidatePath("/");
@@ -583,15 +752,66 @@ export async function setBookVisibilityAction(formData: FormData) {
   if (!user) redirect("/login");
   const bookId = str(formData, "book_id");
   if (!bookId) return;
-  const book = getBookById(bookId);
+  const book = await getBookById(bookId);
   if (!book) redirect("/");
-  if (!getMembership(user.id, book.group_id)) redirect("/");
+  if (!(await getMembership(user.id, book.group_id))) redirect("/");
   if (book.owner_user_id !== user.id || book.share_mode !== "lend") redirect("/");
 
-  setBookVisibleToOthers(bookId, user.id, formData.get("visible_to_others") === "on");
+  await setBookVisibleToOthers(
+    bookId,
+    user.id,
+    formData.get("visible_to_others") === "on"
+  );
   revalidatePath(`/books/${bookId}`);
   revalidatePath("/");
   revalidatePath("/shelf");
+}
+
+export async function withdrawOwnedBooksAction(formData: FormData) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  const groupId = str(formData, "group_id");
+  if (!groupId) redirect("/shelf");
+  if (!(await getMembership(user.id, groupId))) redirect("/");
+
+  const bookIds = formData
+    .getAll("book_id")
+    .filter((value): value is string => typeof value === "string");
+  const removed = await withdrawOwnedBooks(user.id, groupId, bookIds);
+
+  revalidatePath("/shelf");
+  revalidatePath("/");
+  revalidatePath("/", "layout");
+  redirect(`/shelf?withdrawn=${removed}`);
+}
+
+export async function transferOwnedBooksAction(formData: FormData) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  const sourceGroupId = str(formData, "group_id");
+  const targetGroupId = str(formData, "target_group_id");
+  if (!sourceGroupId || !targetGroupId) redirect("/shelf?transferred=0");
+  if (
+    !(await getMembership(user.id, sourceGroupId)) ||
+    !(await getMembership(user.id, targetGroupId))
+  ) {
+    redirect("/");
+  }
+
+  const bookIds = formData
+    .getAll("book_id")
+    .filter((value): value is string => typeof value === "string");
+  const moved = await transferOwnedBooks(
+    user.id,
+    sourceGroupId,
+    targetGroupId,
+    bookIds
+  );
+
+  revalidatePath("/shelf");
+  revalidatePath("/");
+  revalidatePath("/", "layout");
+  redirect(`/shelf?transferred=${moved}`);
 }
 
 /** For "lend" books: the current holder marks the book returned to its owner. */
@@ -600,11 +820,11 @@ export async function returnToOwnerAction(formData: FormData) {
   if (!user) redirect("/login");
   const bookId = str(formData, "book_id");
   if (!bookId) return;
-  const book = getBookById(bookId);
+  const book = await getBookById(bookId);
   if (!book) redirect("/");
-  if (!getMembership(user.id, book.group_id)) redirect("/");
+  if (!(await getMembership(user.id, book.group_id))) redirect("/");
 
-  returnToOwner(bookId, user.id);
+  await returnToOwner(bookId, user.id);
   revalidatePath(`/books/${bookId}`);
   revalidatePath("/shelf");
   revalidatePath("/");
@@ -621,7 +841,7 @@ export async function rateBorrowerAction(formData: FormData) {
   const stars = Number.parseInt(starsRaw, 10);
   if (!Number.isFinite(stars)) return;
 
-  rateBorrower(holdingId, user.id, stars, str(formData, "comment"));
+  await rateBorrower(holdingId, user.id, stars, str(formData, "comment"));
   revalidatePath(`/books/${bookId}`);
 }
 
@@ -634,9 +854,9 @@ export async function addBookReviewAction(formData: FormData) {
   if (!user) redirect("/login");
   const bookId = str(formData, "book_id");
   if (!bookId) return;
-  const book = getBookById(bookId);
+  const book = await getBookById(bookId);
   if (!book) redirect("/");
-  if (!getMembership(user.id, book.group_id)) redirect("/");
+  if (!(await getMembership(user.id, book.group_id))) redirect("/");
   // You can't rate your own book — that would let owners inflate its value.
   if (book.owner_user_id === user.id) return;
 
@@ -645,8 +865,9 @@ export async function addBookReviewAction(formData: FormData) {
   const stars = starsRaw ? Number.parseInt(starsRaw, 10) : null;
   if (!comment && stars == null) return;
 
-  addBookReview(bookId, user.id, stars, comment);
+  await addBookReview(bookId, user.id, stars, comment);
   revalidatePath(`/books/${bookId}`);
+  revalidatePath("/", "layout");
 }
 
 // ---------------------------------------------------------------------------
@@ -659,10 +880,11 @@ export async function postGroupMessageAction(formData: FormData) {
   const groupId = str(formData, "group_id");
   const body = str(formData, "body");
   if (!groupId || !body) redirect("/chat");
-  if (!getMembership(user.id, groupId)) redirect("/");
+  if (!(await getMembership(user.id, groupId))) redirect("/");
 
-  postGroupMessage(groupId, user.id, body);
+  await postGroupMessage(groupId, user.id, body);
   revalidatePath("/chat");
+  revalidatePath("/", "layout");
 }
 
 export async function sendDmAction(formData: FormData) {
@@ -673,7 +895,7 @@ export async function sendDmAction(formData: FormData) {
   if (!to || !body) redirect("/messages");
   if (to === user.id) redirect("/messages");
 
-  sendDirectMessage(user.id, to, body);
+  await sendDirectMessage(user.id, to, body);
   revalidatePath(`/messages/${to}`);
   revalidatePath("/messages");
   redirect(`/messages/${to}`);
@@ -689,9 +911,9 @@ export async function createRequestAction(formData: FormData) {
   const groupId = str(formData, "group_id");
   const title = str(formData, "title");
   if (!groupId || !title) redirect("/requests");
-  if (!getMembership(user.id, groupId)) redirect("/");
+  if (!(await getMembership(user.id, groupId))) redirect("/");
 
-  createBookRequest({
+  await createBookRequest({
     group_id: groupId,
     requester_user_id: user.id,
     title,
@@ -703,6 +925,25 @@ export async function createRequestAction(formData: FormData) {
   redirect("/requests");
 }
 
+export async function createAssistantRequestAction(formData: FormData) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  const groupId = str(formData, "group_id");
+  const title = str(formData, "title");
+  if (!groupId || !title) redirect("/assistant");
+  if (!(await getMembership(user.id, groupId))) redirect("/");
+
+  const id = await createAssistantWantedRequest({
+    groupId,
+    userId: user.id,
+    title,
+    question: str(formData, "question") ?? title,
+  });
+  revalidatePath("/assistant");
+  revalidatePath("/requests");
+  redirect(`/requests?created=${id}`);
+}
+
 export async function toggleInterestAction(formData: FormData) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
@@ -710,7 +951,7 @@ export async function toggleInterestAction(formData: FormData) {
   const kind = str(formData, "kind");
   if (!requestId || (kind !== "want" && kind !== "buy")) redirect("/requests");
 
-  toggleRequestInterest(requestId, user.id, kind);
+  await toggleRequestInterest(requestId, user.id, kind);
   revalidatePath("/requests");
 }
 
@@ -721,7 +962,7 @@ export async function setRequestStatusAction(formData: FormData) {
   const status = str(formData, "status") === "fulfilled" ? "fulfilled" : "open";
   if (!requestId) redirect("/requests");
 
-  setRequestStatus(requestId, user.id, status);
+  await setRequestStatus(requestId, user.id, status);
   revalidatePath("/requests");
 }
 
@@ -735,9 +976,14 @@ export async function createListAction(formData: FormData) {
   const groupId = str(formData, "group_id");
   const title = str(formData, "title");
   if (!groupId || !title) redirect("/lists");
-  if (!getMembership(user.id, groupId)) redirect("/");
+  if (!(await getMembership(user.id, groupId))) redirect("/");
 
-  const id = createBookList(groupId, user.id, title, str(formData, "description"));
+  const id = await createBookList(
+    groupId,
+    user.id,
+    title,
+    str(formData, "description")
+  );
   revalidatePath("/lists");
   redirect(`/lists/${id}`);
 }
@@ -748,11 +994,11 @@ export async function addListItemAction(formData: FormData) {
   const listId = str(formData, "list_id");
   const title = str(formData, "title");
   if (!listId || !title) redirect("/lists");
-  const list = getBookList(listId);
+  const list = await getBookList(listId);
   if (!list) redirect("/lists");
-  if (!getMembership(user.id, list.group_id)) redirect("/");
+  if (!(await getMembership(user.id, list.group_id))) redirect("/");
 
-  addBookListItem(
+  await addBookListItem(
     listId,
     title,
     str(formData, "author"),
@@ -769,13 +1015,13 @@ export async function setStatusAction(formData: FormData) {
   if (!user) redirect("/login");
   const bookId = str(formData, "book_id");
   if (!bookId) return;
-  const book = getBookById(bookId);
+  const book = await getBookById(bookId);
   if (!book) redirect("/");
   if (book.current_holder_user_id !== user.id) redirect(`/books/${bookId}`);
 
   const status: BookStatus =
     str(formData, "status") === "reading" ? "reading" : "available";
-  setBookStatus(bookId, user.id, status);
+  await setBookStatus(bookId, user.id, status);
   revalidatePath(`/books/${bookId}`);
   revalidatePath("/shelf");
   revalidatePath("/");

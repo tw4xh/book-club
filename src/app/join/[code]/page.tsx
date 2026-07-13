@@ -20,10 +20,10 @@ export default async function JoinPage({
 
   if (!user) redirect(`/login?next=/join/${code}`);
 
-  const group = getGroupByInviteCode(code);
+  const group = await getGroupByInviteCode(code);
   if (!group) notFound();
 
-  const alreadyMember = !!getMembership(user.id, group.id);
+  const alreadyMember = !!(await getMembership(user.id, group.id));
   const agreeError = sp.error === "agree";
 
   return (

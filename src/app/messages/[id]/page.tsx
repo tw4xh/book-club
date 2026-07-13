@@ -18,12 +18,12 @@ export default async function DmThreadPage({
   if (!user) redirect(`/login?next=/messages/${id}`);
   if (id === user.id) redirect("/messages");
 
-  const other = getUserById(id);
+  const other = await getUserById(id);
   if (!other) notFound();
 
-  const messages = getConversation(user.id, other.id);
+  const messages = await getConversation(user.id, other.id);
   // Opening the thread reads the other person's messages to me.
-  markConversationRead(user.id, other.id);
+  await markConversationRead(user.id, other.id);
 
   const fmt = (iso: string) =>
     new Date(iso).toLocaleString(locale === "zh" ? "zh-CN" : "en-US", {

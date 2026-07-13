@@ -16,7 +16,7 @@ export async function getSessionContext(): Promise<SessionContext> {
   const user = await getCurrentUser();
   if (!user) return { user: null, groups: [], activeGroup: null };
 
-  const groups = getGroupsForUser(user.id);
+  const groups = await getGroupsForUser(user.id);
   const activeId = await getActiveGroupId();
   const activeGroup = groups.find((g) => g.id === activeId) ?? groups[0] ?? null;
 

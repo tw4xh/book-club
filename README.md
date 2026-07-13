@@ -49,26 +49,35 @@ It solves the three problems that made earlier book sharing hard:
 
 - **Next.js (App Router) + React + TypeScript**
 - **Tailwind CSS** (mobile-first)
-- **SQLite** via `better-sqlite3` for local persistence
+- **PostgreSQL** via `pg` (Supabase in production; local Docker in dev)
 - Lightweight custom **i18n** (zh-CN default, en secondary), cookie-based locale
-- Cookie-based **passwordless sessions** (HMAC-signed)
+- Cookie-based **password sessions** (HMAC-signed)
 - **PWA**: web manifest + service worker
 
-### Note on the data layer (Supabase)
+### Data layer
 
-The product plan targets **Supabase** (managed Postgres + Auth + Storage). To keep
-this runnable with zero cloud setup, the same data model and group-scoped access
-are implemented locally in SQLite behind a small repository layer
-(`src/lib/repo.ts`). Moving to Supabase/Postgres in production means reimplementing
-that one file against the Supabase client (and swapping cover uploads from the local
-`public/uploads` folder to Supabase Storage); the UI and flows stay the same.
+All data access lives in one repository layer (`src/lib/repo.ts`) on top of a small
+Postgres helper (`src/lib/db.ts`). The schema is created automatically on first
+query (`ensureSchema`), so there is no separate migration step. Set `DATABASE_URL`
+to any Postgres database — a local Docker container in development, Supabase in
+production.
 
 ## Getting started
 
+You need a Postgres database. The quickest local option is Docker:
+
+```bash
+docker run -d --name bookclub-pg \
+  -e POSTGRES_USER=bookclub -e POSTGRES_PASSWORD=bookclub -e POSTGRES_DB=bookclub \
+  -p 5433:5432 postgres:16
+```
+
+Then:
+
 ```bash
 npm install
-cp .env.example .env       # optional; set SESSION_SECRET for stable sessions
-npm run seed               # optional; creates a demo club + sample books
+cp .env.example .env       # sets DATABASE_URL to the local container above
+npm run seed               # optional; creates demo clubs + sample books
 npm run dev                # http://localhost:3000
 ```
 
@@ -83,14 +92,50 @@ npm run build
 npm start
 ```
 
-## Deploying
+## Deploying to Supabase + Vercel
 
-This local build uses SQLite and writes uploaded covers to `public/uploads`, which
-works on a single long-running server (e.g. a small VM, Render, Railway, Fly.io).
+### 1. Create the Supabase database
 
-For **Vercel** (serverless), the filesystem is read-only and ephemeral, so move the
-data layer to Supabase/Postgres and cover storage to Supabase Storage (see the note
-above) before deploying there.
+1. Create a project at [supabase.com](https://supabase.com) (free tier is fine).
+2. Go to **Project Settings → Database → Connection string** and copy the
+   **Transaction** pooler URL (port `6543`). It looks like:
+   `postgres://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:6543/postgres`
+   The pooler is important for serverless — it avoids exhausting connections.
+3. The schema is created automatically on first request, so there is nothing to run
+   manually. (Optionally seed demo data locally against the Supabase URL by setting
+   `DATABASE_URL` and running `npm run seed`.)
+
+### 2. Deploy to Vercel
+
+1. Push this repo to GitHub and **Import Project** at [vercel.com](https://vercel.com).
+   Vercel auto-detects Next.js — no extra build config needed.
+2. Add these **Environment Variables** (Project → Settings → Environment Variables):
+
+   | Variable             | Value                                                   |
+   | -------------------- | ------------------------------------------------------- |
+   | `DATABASE_URL`       | the Supabase **pooler** connection string (port 6543)   |
+   | `SESSION_SECRET`     | a long random string — `openssl rand -base64 48`        |
+   | `TANSHU_API_KEY`     | (optional) Chinese ISBN metadata fallback               |
+   | `AI_CHAT_ENABLED`    | (optional) `true` to enable the Gemini assistant        |
+   | `GEMINI_API_KEY`     | (optional) required if `AI_CHAT_ENABLED=true`           |
+   | `GEMINI_MODEL`       | (optional) e.g. `gemini-3.1-flash-lite`                 |
+   | `GEMINI_DAILY_LIMIT` | (optional) free-tier daily request budget (default 500) |
+
+   `SESSION_SECRET` is **required in production** — the app refuses to start
+   sessions without a strong value.
+
+3. Deploy. On the first visit the schema is created and the app is live.
+
+### Note on uploaded covers
+
+Cover images added by URL or fetched from ISBN APIs work anywhere. If you use the
+local file-upload path (`public/uploads`), note that Vercel's filesystem is
+ephemeral; for durable uploads switch that to Supabase Storage.
+
+### Other hosts
+
+Because it is a standard Next.js + Postgres app, it also runs on any long-running
+Node host (Render, Railway, Fly.io, a VM) — just set the same environment variables.
 
 ## Project layout
 
@@ -107,8 +152,8 @@ src/
     join/[code]/        # accept an invite link
   components/           # TopBar, BottomNav, BookCard, etc.
   lib/
-    db.ts               # SQLite connection + schema
-    repo.ts             # all data access (swap this for Supabase later)
+    db.ts               # Postgres pool + schema (Supabase-compatible)
+    repo.ts             # all data access (async, group-scoped)
     auth.ts             # signed-cookie sessions + active group
     context.ts          # resolves current user + active club
     i18n.ts             # zh/en dictionaries + translator

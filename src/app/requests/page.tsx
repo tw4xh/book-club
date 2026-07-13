@@ -16,7 +16,7 @@ export default async function RequestsPage() {
   if (!user) redirect("/login?next=/requests");
   if (!activeGroup) redirect("/groups");
 
-  const requests = listBookRequests(activeGroup.id, user.id);
+  const requests = await listBookRequests(activeGroup.id, user.id);
 
   return (
     <div className="space-y-5">

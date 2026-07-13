@@ -11,9 +11,9 @@ export default async function NotificationsPage() {
 
   if (!user) redirect("/login?next=/notifications");
 
-  const items = getNotifications(user.id);
+  const items = await getNotifications(user.id);
   // Opening this page counts as reading; clear the unread badge.
-  markNotificationsRead(user.id);
+  await markNotificationsRead(user.id);
 
   const fmt = (iso: string) =>
     new Date(iso).toLocaleString(locale === "zh" ? "zh-CN" : "en-US", {

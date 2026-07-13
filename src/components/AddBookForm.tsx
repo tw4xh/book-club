@@ -38,10 +38,8 @@ export interface AddBookLabels {
   categoryPlaceholder: string;
   fieldCondition: string;
   conditionPlaceholder: string;
-  fieldLocation: string;
   fieldZip: string;
   zipPlaceholder: string;
-  areaPlaceholder: string;
   fieldNotes: string;
   optional: string;
   submit: string;
@@ -58,13 +56,11 @@ function mapLanguage(code: string | null): string {
 
 export function AddBookForm({
   groupId,
-  defaultArea,
   defaultZip,
   defaultLanguage,
   labels,
 }: {
   groupId: string;
-  defaultArea: string;
   defaultZip: string;
   defaultLanguage: string;
   labels: AddBookLabels;
@@ -126,7 +122,7 @@ export function AddBookForm({
         />
       ) : null}
 
-      <form action={addBookAction} className="card mt-6 space-y-4 p-4">
+      <form action={addBookAction} className="card space-y-4 p-4">
         <input type="hidden" name="group_id" value={groupId} />
         <input type="hidden" name="cover_url" value={coverUrl} />
         <input type="hidden" name="share_mode" value={shareMode} />
@@ -333,32 +329,18 @@ export function AddBookForm({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="label" htmlFor="current_location_area">
-              {labels.fieldLocation}
-            </label>
-            <input
-              id="current_location_area"
-              name="current_location_area"
-              defaultValue={defaultArea}
-              placeholder={labels.areaPlaceholder}
-              className="input"
-            />
-          </div>
-          <div>
-            <label className="label" htmlFor="location_zip">
-              {labels.fieldZip}
-            </label>
-            <input
-              id="location_zip"
-              name="location_zip"
-              inputMode="numeric"
-              defaultValue={defaultZip}
-              placeholder={labels.zipPlaceholder}
-              className="input"
-            />
-          </div>
+        <div>
+          <label className="label" htmlFor="location_zip">
+            {labels.fieldZip}
+          </label>
+          <input
+            id="location_zip"
+            name="location_zip"
+            inputMode="numeric"
+            defaultValue={defaultZip}
+            placeholder={labels.zipPlaceholder}
+            className="input"
+          />
         </div>
 
         <details

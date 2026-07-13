@@ -25,9 +25,11 @@ import {
   toggleRequestInterest,
   upsertUserByEmail,
 } from "../src/lib/repo";
-import { getDb } from "../src/lib/db";
+import { run, withTransaction } from "../src/lib/db";
+import { lookupIsbn } from "../src/lib/books-api";
 import { hashPassword } from "../src/lib/password";
 import type { BookShareMode, User } from "../src/lib/types";
+import fs from "node:fs";
 
 const SEED_CODE = "MNMOMS";
 const SEED_GROUP_CODES = [SEED_CODE, "TWINEN", "BIGKIDS", "WEEKEND"];
@@ -39,47 +41,152 @@ const SEED_EMAILS = [
   "may@example.com",
   "qing@example.com",
   "anna@example.com",
+  "tianyaohasadream@gmail.com",
 ];
 
-function createSeedGroup(
-  db: ReturnType<typeof getDb>,
-  input: {
-    name: string;
-    type: string;
-    inviteCode: string;
-    policy: string;
+function loadLocalEnv() {
+  if (!fs.existsSync(".env")) return;
+  const lines = fs.readFileSync(".env", "utf8").split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const index = trimmed.indexOf("=");
+    if (index <= 0) continue;
+    const key = trimmed.slice(0, index).trim();
+    const value = trimmed.slice(index + 1).trim();
+    process.env[key] ??= value;
   }
-) {
+}
+
+async function createSeedGroup(input: {
+  name: string;
+  type: string;
+  inviteCode: string;
+  policy: string;
+}): Promise<string> {
   const id = crypto.randomUUID();
-  db.prepare(
-    `INSERT INTO groups (id, name, type, policy, invite_code, created_at) VALUES (?, ?, ?, ?, ?, ?)`
-  ).run(
-    id,
-    input.name,
-    input.type,
-    input.policy,
-    input.inviteCode,
-    new Date().toISOString()
+  await run(
+    `INSERT INTO groups (id, name, type, policy, invite_code, created_at) VALUES ($1, $2, $3, $4, $5, $6)`,
+    [
+      id,
+      input.name,
+      input.type,
+      input.policy,
+      input.inviteCode,
+      new Date().toISOString(),
+    ]
   );
   return id;
 }
 
-function main() {
-  const db = getDb();
+function languageLabel(language: string | null): string | null {
+  if (!language) return null;
+  const lower = language.toLowerCase();
+  if (lower.startsWith("zh")) return "中文";
+  if (lower.startsWith("en")) return "英文";
+  return language;
+}
 
-  if (SEED_GROUP_CODES.some((code) => getGroupByInviteCode(code))) {
+function escapeXml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function titleLines(title: string): string[] {
+  const chars = Array.from(title);
+  const lines: string[] = [];
+  for (let i = 0; i < chars.length && lines.length < 3; i += 8) {
+    lines.push(chars.slice(i, i + 8).join(""));
+  }
+  return lines;
+}
+
+function generatedCover(title: string, category?: string | null): string {
+  const palettes = [
+    ["#fda4af", "#fb7185"],
+    ["#93c5fd", "#3b82f6"],
+    ["#86efac", "#22c55e"],
+    ["#fde68a", "#f59e0b"],
+    ["#c4b5fd", "#8b5cf6"],
+    ["#67e8f9", "#06b6d4"],
+  ];
+  const index =
+    Array.from(title).reduce((sum, ch) => sum + ch.charCodeAt(0), 0) % palettes.length;
+  const [from, to] = palettes[index];
+  const lines = titleLines(title);
+  const titleSvg = lines
+    .map(
+      (line, i) =>
+        `<text x="50%" y="${118 + i * 34}" text-anchor="middle" font-size="26" font-weight="700" fill="#fff">${escapeXml(line)}</text>`
+    )
+    .join("");
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="360" height="520" viewBox="0 0 360 520">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="${from}"/>
+      <stop offset="100%" stop-color="${to}"/>
+    </linearGradient>
+  </defs>
+  <rect width="360" height="520" rx="28" fill="url(#g)"/>
+  <rect x="26" y="30" width="308" height="460" rx="22" fill="rgba(255,255,255,0.16)" stroke="rgba(255,255,255,0.42)" stroke-width="2"/>
+  <text x="50%" y="82" text-anchor="middle" font-size="24" fill="rgba(255,255,255,0.9)">邻里书屋</text>
+  ${titleSvg}
+  <text x="50%" y="392" text-anchor="middle" font-size="20" fill="rgba(255,255,255,0.9)">${escapeXml(category ?? "儿童图书")}</text>
+  <text x="50%" y="448" text-anchor="middle" font-size="64" fill="rgba(255,255,255,0.9)">📚</text>
+</svg>`;
+  return `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
+}
+
+async function createBookWithIsbnMeta(input: Parameters<typeof createBook>[0]) {
+  if (!input.isbn || input.cover_image_url) {
+    return createBook({
+      ...input,
+      cover_image_url:
+        input.cover_image_url ?? generatedCover(input.title, input.category),
+    });
+  }
+  const meta = await lookupIsbn(input.isbn).catch(() => null);
+  if (!meta) {
+    return createBook({
+      ...input,
+      cover_image_url: generatedCover(input.title, input.category),
+    });
+  }
+
+  return createBook({
+    ...input,
+    author: input.author ?? (meta.authors.length > 0 ? meta.authors.join(", ") : null),
+    language: input.language ?? languageLabel(meta.language),
+    cover_image_url:
+      input.cover_image_url ??
+      meta.cover_url ??
+      generatedCover(input.title, input.category),
+    category: input.category ?? meta.categories[0] ?? null,
+  });
+}
+
+async function main() {
+  loadLocalEnv();
+
+  const existing = await Promise.all(
+    SEED_GROUP_CODES.map((code) => getGroupByInviteCode(code))
+  );
+  if (existing.some(Boolean)) {
     if (process.env.SEED_RESET === "1") {
-      const tx = db.transaction(() => {
-        const groupPlaceholders = SEED_GROUP_CODES.map(() => "?").join(", ");
-        db.prepare(
-          `DELETE FROM groups WHERE invite_code IN (${groupPlaceholders})`
-        ).run(...SEED_GROUP_CODES);
-        const placeholders = SEED_EMAILS.map(() => "?").join(", ");
-        db.prepare(`DELETE FROM users WHERE email IN (${placeholders})`).run(
-          ...SEED_EMAILS
+      await withTransaction(async (tx) => {
+        const groupPlaceholders = SEED_GROUP_CODES.map((_, i) => `$${i + 1}`).join(
+          ", "
         );
+        await tx.run(
+          `DELETE FROM groups WHERE invite_code IN (${groupPlaceholders})`,
+          SEED_GROUP_CODES
+        );
+        const placeholders = SEED_EMAILS.map((_, i) => `$${i + 1}`).join(", ");
+        await tx.run(`DELETE FROM users WHERE email IN (${placeholders})`, SEED_EMAILS);
       });
-      tx();
     } else {
       console.log(`Seed club (${SEED_CODE}) already exists. Nothing to do.`);
       console.log("Run `npm run seed:reset` to replace it with fresh demo data.");
@@ -96,18 +203,19 @@ function main() {
     "3. 贵重书籍可能需要押金，损坏或丢失请照价赔偿。",
     "4. 取书还书请友好沟通，互相体谅。",
   ].join("\n");
-  db.prepare(
-    `INSERT INTO groups (id, name, type, policy, invite_code, created_at) VALUES (?, ?, ?, ?, ?, ?)`
-  ).run(
-    groupId,
-    "明尼苏达华人妈妈读书会",
-    "Chinese moms · Minnesota",
-    policy,
-    SEED_CODE,
-    new Date().toISOString()
+  await run(
+    `INSERT INTO groups (id, name, type, policy, invite_code, created_at) VALUES ($1, $2, $3, $4, $5, $6)`,
+    [
+      groupId,
+      "明尼苏达华人妈妈读书会",
+      "Chinese moms · Minnesota",
+      policy,
+      SEED_CODE,
+      new Date().toISOString(),
+    ]
   );
 
-  const lily = upsertUserByEmail({
+  const lily = await upsertUserByEmail({
     email: "lily@example.com",
     name: "Lily 妈妈",
     password_hash: hashPassword(DEMO_PASSWORD),
@@ -115,7 +223,7 @@ function main() {
     home_area: "Eden Prairie",
     home_zip: "55344",
   });
-  const wei = upsertUserByEmail({
+  const wei = await upsertUserByEmail({
     email: "wei@example.com",
     name: "Wei 妈妈",
     password_hash: hashPassword(DEMO_PASSWORD),
@@ -123,7 +231,7 @@ function main() {
     home_area: "Maple Grove",
     home_zip: "55369",
   });
-  const grace = upsertUserByEmail({
+  const grace = await upsertUserByEmail({
     email: "grace@example.com",
     name: "Grace 妈妈",
     password_hash: hashPassword(DEMO_PASSWORD),
@@ -131,7 +239,7 @@ function main() {
     home_area: "Woodbury",
     home_zip: "55125",
   });
-  const may = upsertUserByEmail({
+  const may = await upsertUserByEmail({
     email: "may@example.com",
     name: "May 妈妈",
     password_hash: hashPassword(DEMO_PASSWORD),
@@ -139,7 +247,7 @@ function main() {
     home_area: "Plymouth",
     home_zip: "55446",
   });
-  const qing = upsertUserByEmail({
+  const qing = await upsertUserByEmail({
     email: "qing@example.com",
     name: "Qing 妈妈",
     password_hash: hashPassword(DEMO_PASSWORD),
@@ -147,7 +255,7 @@ function main() {
     home_area: "Minnetonka",
     home_zip: "55305",
   });
-  const anna = upsertUserByEmail({
+  const anna = await upsertUserByEmail({
     email: "anna@example.com",
     name: "Anna 妈妈",
     password_hash: hashPassword(DEMO_PASSWORD),
@@ -155,11 +263,19 @@ function main() {
     home_area: "St. Paul",
     home_zip: "55104",
   });
+  const tianyao = await upsertUserByEmail({
+    email: "tianyaohasadream@gmail.com",
+    name: "Tianyao",
+    password_hash: hashPassword(DEMO_PASSWORD),
+    contact: "微信: tianyao",
+    home_area: "Minneapolis",
+    home_zip: "55414",
+  });
 
-  const members = [lily, wei, grace, may, qing, anna];
+  const members = [lily, wei, grace, may, qing, anna, tianyao];
 
   for (const u of members) {
-    addMembership(
+    await addMembership(
       u.id,
       groupId,
       u.id === lily.id ? "admin" : "member",
@@ -167,34 +283,34 @@ function main() {
     );
   }
 
-  const englishGroupId = createSeedGroup(db, {
+  const englishGroupId = await createSeedGroup({
     name: "双城英文启蒙交换群",
     type: "English reading · Twin Cities",
     inviteCode: "TWINEN",
     policy:
       "适合想交换英文绘本、分级读物和 phonics 资料的家庭。请标注级别，借阅书建议 2-3 周归还。",
   });
-  const bigKidsGroupId = createSeedGroup(db, {
+  const bigKidsGroupId = await createSeedGroup({
     name: "明州大孩子中文阅读社",
     type: "Chinese reading · 7+ kids",
     inviteCode: "BIGKIDS",
     policy: "面向 7 岁以上孩子的中文章节书、漫画和名著。欢迎分享孩子真实读后感。",
   });
-  const weekendGroupId = createSeedGroup(db, {
+  const weekendGroupId = await createSeedGroup({
     name: "周末图书漂流站",
     type: "Weekend swaps · Local pickup",
     inviteCode: "WEEKEND",
     policy: "周末线下交换用的小群。请在聊天里约好地点时间，传阅书读完尽快转给下一位。",
   });
 
-  for (const u of [lily, may, anna]) {
-    addMembership(u.id, englishGroupId, u.id === anna.id ? "admin" : "member");
+  for (const u of members) {
+    await addMembership(u.id, englishGroupId, u.id === anna.id ? "admin" : "member");
   }
-  for (const u of [lily, grace, qing, wei]) {
-    addMembership(u.id, bigKidsGroupId, u.id === qing.id ? "admin" : "member");
+  for (const u of members) {
+    await addMembership(u.id, bigKidsGroupId, u.id === qing.id ? "admin" : "member");
   }
-  for (const u of [wei, may, qing, anna]) {
-    addMembership(u.id, weekendGroupId, u.id === wei.id ? "admin" : "member");
+  for (const u of members) {
+    await addMembership(u.id, weekendGroupId, u.id === wei.id ? "admin" : "member");
   }
 
   type SeedBook = {
@@ -245,6 +361,7 @@ function main() {
       category: "绘本",
       condition: "九成新",
       share_mode: "flow",
+      isbn: "9787543464582",
     },
     {
       owner: lily,
@@ -329,6 +446,7 @@ function main() {
       category: "名著",
       condition: "九成新",
       share_mode: "flow",
+      isbn: "9787020042494",
     },
     {
       owner: grace,
@@ -404,6 +522,7 @@ function main() {
       condition: "八成新",
       share_mode: "lend",
       deposit: "$15",
+      isbn: "9787020033430",
     },
     {
       owner: anna,
@@ -436,29 +555,55 @@ function main() {
       condition: "九成新",
       share_mode: "flow",
     },
+    {
+      owner: tianyao,
+      title: "怪杰佐罗力：神秘的飞机",
+      author: "原裕",
+      language: "中文",
+      age_range: "7-10 岁",
+      category: "章节书",
+      condition: "九成新",
+      share_mode: "flow",
+      isbn: "9787558328558",
+      notes: "Tianyao 的示例书，带真实 ISBN 和封面。",
+    },
+    {
+      owner: tianyao,
+      title: "小王子",
+      author: "圣埃克苏佩里",
+      language: "中文",
+      age_range: "8-12 岁",
+      category: "名著",
+      condition: "九成新",
+      share_mode: "lend",
+      deposit: "$5",
+      isbn: "9787020042494",
+    },
   ];
 
-  const created = books.map((b) =>
-    createBook({
-      group_id: groupId,
-      owner_user_id: b.owner.id,
-      title: b.title,
-      author: b.author,
-      language: b.language,
-      age_range: b.age_range,
-      category: b.category,
-      condition: b.condition,
-      share_mode: b.share_mode,
-      deposit: "deposit" in b ? (b.deposit as string) : null,
-      isbn: b.isbn ?? null,
-      notes: b.notes ?? null,
-      current_location_area: b.owner.home_area,
-      location_zip: b.owner.home_zip,
-    })
+  const created = await Promise.all(
+    books.map((b) =>
+      createBookWithIsbnMeta({
+        group_id: groupId,
+        owner_user_id: b.owner.id,
+        title: b.title,
+        author: b.author,
+        language: b.language,
+        age_range: b.age_range,
+        category: b.category,
+        condition: b.condition,
+        share_mode: b.share_mode,
+        deposit: "deposit" in b ? (b.deposit as string) : null,
+        isbn: b.isbn ?? null,
+        notes: b.notes ?? null,
+        current_location_area: b.owner.home_area,
+        location_zip: b.owner.home_zip,
+      })
+    )
   );
 
   const englishBooks = [
-    createBook({
+    await createBookWithIsbnMeta({
       group_id: englishGroupId,
       owner_user_id: anna.id,
       title: "Oxford Reading Tree Level 1+",
@@ -469,11 +614,12 @@ function main() {
       condition: "九成新",
       share_mode: "lend",
       deposit: "$8",
+      isbn: "9780198481169",
       current_location_area: anna.home_area,
       location_zip: anna.home_zip,
       notes: "适合刚开始 phonics 和 sight words 的孩子。",
     }),
-    createBook({
+    await createBookWithIsbnMeta({
       group_id: englishGroupId,
       owner_user_id: may.id,
       title: "Pete the Cat: I Love My White Shoes",
@@ -483,10 +629,11 @@ function main() {
       category: "英文绘本",
       condition: "八成新",
       share_mode: "flow",
+      isbn: "9780061906220",
       current_location_area: may.home_area,
       location_zip: may.home_zip,
     }),
-    createBook({
+    await createBookWithIsbnMeta({
       group_id: englishGroupId,
       owner_user_id: lily.id,
       title: "Elephant & Piggie: Today I Will Fly!",
@@ -496,12 +643,13 @@ function main() {
       category: "桥梁书",
       condition: "九成新",
       share_mode: "flow",
+      isbn: "9781423102953",
       current_location_area: lily.home_area,
       location_zip: lily.home_zip,
     }),
   ];
 
-  createBook({
+  await createBookWithIsbnMeta({
     group_id: bigKidsGroupId,
     owner_user_id: qing.id,
     title: "怪杰佐罗力：神秘的飞机",
@@ -516,7 +664,7 @@ function main() {
     location_zip: qing.home_zip,
     notes: "测试中文 ISBN 自动封面数据源时也可以扫这本。",
   });
-  createBook({
+  await createBookWithIsbnMeta({
     group_id: bigKidsGroupId,
     owner_user_id: grace.id,
     title: "林汉达中国历史故事集",
@@ -530,7 +678,7 @@ function main() {
     current_location_area: grace.home_area,
     location_zip: grace.home_zip,
   });
-  createBook({
+  await createBookWithIsbnMeta({
     group_id: bigKidsGroupId,
     owner_user_id: wei.id,
     title: "可怕的科学：经典数学系列",
@@ -544,7 +692,7 @@ function main() {
     location_zip: wei.home_zip,
   });
 
-  createBook({
+  await createBookWithIsbnMeta({
     group_id: weekendGroupId,
     owner_user_id: wei.id,
     title: "小熊宝宝绘本",
@@ -557,7 +705,7 @@ function main() {
     current_location_area: wei.home_area,
     location_zip: wei.home_zip,
   });
-  createBook({
+  await createBookWithIsbnMeta({
     group_id: weekendGroupId,
     owner_user_id: anna.id,
     title: "Peppa Pig 双语故事",
@@ -580,173 +728,243 @@ function main() {
 
   // Anonymous content reviews. These make quality-credit behavior easy to test:
   // "猜猜我有多爱你" averages 4.5 stars, so it receives the high-quality bonus.
-  addBookReview(
+  await addBookReview(
     byTitle("猜猜我有多爱你").id,
     grace.id,
     5,
     "孩子超级喜欢，睡前要读好几遍！"
   );
-  addBookReview(byTitle("猜猜我有多爱你").id, wei.id, 4, "画风温柔，适合亲子共读。");
-  addBookReview(byTitle("夏洛的网").id, lily.id, 5, "适合大一点的孩子，读完很感动。");
-  addBookReview(byTitle("夏洛的网").id, may.id, 5, "很好的生命教育故事。");
-  addBookReview(byTitle("神奇校车").id, anna.id, 4, "科普内容有趣，孩子会追着问问题。");
-  addBookReview(
+  await addBookReview(
+    byTitle("猜猜我有多爱你").id,
+    wei.id,
+    4,
+    "画风温柔，适合亲子共读。"
+  );
+  await addBookReview(
+    byTitle("夏洛的网").id,
+    lily.id,
+    5,
+    "适合大一点的孩子，读完很感动。"
+  );
+  await addBookReview(byTitle("夏洛的网").id, may.id, 5, "很好的生命教育故事。");
+  await addBookReview(
+    byTitle("神奇校车").id,
+    anna.id,
+    4,
+    "科普内容有趣，孩子会追着问问题。"
+  );
+  await addBookReview(
     byTitle("DK儿童百科全书").id,
     qing.id,
     5,
     "厚但是很好翻，适合查知识点。"
   );
-  addBookReview(englishBooks[0].id, lily.id, 4, "分级很清楚，适合每天读一点。");
+  await addBookReview(englishBooks[0].id, lily.id, 4, "分级很清楚，适合每天读一点。");
 
   // Make Wei's flow book "神奇校车" already pass on to Grace, so its page shows
   // both the current holder (Grace) and the original owner (Wei).
-  claimBook(byTitle("神奇校车").id, grace.id);
-  claimBook(byTitle("米小圈上学记").id, lily.id);
-  claimBook(byTitle("青蛙和蟾蜍").id, anna.id);
+  await claimBook(byTitle("神奇校车").id, grace.id);
+  await claimBook(byTitle("米小圈上学记").id, lily.id);
+  await claimBook(byTitle("青蛙和蟾蜍").id, anna.id);
 
   // Demo a completed lend cycle with a rating: Wei borrows Lily's "好饿的毛毛虫",
   // returns it, and Lily rates Wei — so the book shows borrow history + credit.
   const caterpillar = byTitle("好饿的毛毛虫");
-  claimBook(caterpillar.id, wei.id);
-  returnToOwner(caterpillar.id, wei.id);
-  const weiBorrow = getBookHoldings(caterpillar.id).find(
+  await claimBook(caterpillar.id, wei.id);
+  await returnToOwner(caterpillar.id, wei.id);
+  const weiBorrow = (await getBookHoldings(caterpillar.id)).find(
     (h) => h.holder_user_id === wei.id && h.ended_reason === "returned"
   );
-  if (weiBorrow) rateBorrower(weiBorrow.id, lily.id, 5, "书还得很干净，准时归还，赞！");
+  if (weiBorrow)
+    await rateBorrower(weiBorrow.id, lily.id, 5, "书还得很干净，准时归还，赞！");
 
   // Demo active lend books that are still out with borrowers.
-  claimBook(byTitle("夏洛的网").id, qing.id);
-  claimBook(byTitle("牛津树 Level 3").id, lily.id);
-  claimBook(byTitle("大中华寻宝记：四川寻宝记").id, may.id);
+  await claimBook(byTitle("夏洛的网").id, qing.id);
+  await claimBook(byTitle("牛津树 Level 3").id, lily.id);
+  await claimBook(byTitle("大中华寻宝记：四川寻宝记").id, may.id);
 
   // Grace opts out of being contacted, to demo the "stop contacting me" switch.
-  setUserContactable(grace.id, false);
-  setUserContactable(qing.id, false);
+  await setUserContactable(grace.id, false);
+  await setUserContactable(qing.id, false);
 
   // Demo payment handles so the "thank the owner" feature shows up. Lily offers
   // all three; Wei only Venmo; May uses PayPal/WeChat; Grace none (empty case).
-  setUserPaymentHandles(lily.id, {
+  await setUserPaymentHandles(lily.id, {
     paypal: "lilymn",
     venmo: "@lily-mn",
     wechat: "lily_mn_pay",
   });
-  setUserPaymentHandles(wei.id, { venmo: "@wei-mn" });
-  setUserPaymentHandles(may.id, {
+  await setUserPaymentHandles(wei.id, { venmo: "@wei-mn" });
+  await setUserPaymentHandles(may.id, {
     paypal: "https://www.paypal.me/mayreads",
     wechat: "may_books_pay",
   });
-  setUserPaymentHandles(anna.id, { venmo: "@anna-books" });
+  await setUserPaymentHandles(anna.id, { venmo: "@anna-books" });
 
   // --- Community demo data -------------------------------------------------
   // Club group chat.
-  postGroupMessage(
+  await postGroupMessage(
     groupId,
     lily.id,
     "大家好，欢迎来到读书会！有想读的书随时在“想要的书”里提～"
   );
-  postGroupMessage(groupId, wei.id, "请问有没有适合 4 岁的英文绘本呀？");
-  postGroupMessage(groupId, grace.id, "我家有几本，回头加到书单里！");
-  postGroupMessage(
+  await postGroupMessage(groupId, wei.id, "请问有没有适合 4 岁的英文绘本呀？");
+  await postGroupMessage(groupId, grace.id, "我家有几本，回头加到书单里！");
+  await postGroupMessage(
     groupId,
     may.id,
     "这周末我会去 Eden Prairie 图书馆附近，可以顺路交换书。"
   );
-  postGroupMessage(groupId, qing.id, "我加了几本大孩子看的章节书，适合 8 岁以上。");
-  postGroupMessage(groupId, anna.id, "如果有人想练英文阅读，我有牛津树和幼儿园课本。");
-  postGroupMessage(englishGroupId, anna.id, "这个群主要交换英文启蒙和分级读物。");
-  postGroupMessage(englishGroupId, may.id, "我家 Pete the Cat 可以传阅，适合唱着读。");
-  postGroupMessage(bigKidsGroupId, qing.id, "大孩子中文阅读社开张啦，欢迎推荐章节书。");
-  postGroupMessage(bigKidsGroupId, grace.id, "历史类和科普类书我家孩子最近很喜欢。");
-  postGroupMessage(weekendGroupId, wei.id, "周末图书漂流站可以用来约线下交换。");
-  postGroupMessage(weekendGroupId, anna.id, "我周六下午会去 St. Paul 图书馆附近。");
+  await postGroupMessage(
+    groupId,
+    qing.id,
+    "我加了几本大孩子看的章节书，适合 8 岁以上。"
+  );
+  await postGroupMessage(
+    groupId,
+    anna.id,
+    "如果有人想练英文阅读，我有牛津树和幼儿园课本。"
+  );
+  await postGroupMessage(englishGroupId, anna.id, "这个群主要交换英文启蒙和分级读物。");
+  await postGroupMessage(
+    englishGroupId,
+    may.id,
+    "我家 Pete the Cat 可以传阅，适合唱着读。"
+  );
+  await postGroupMessage(
+    bigKidsGroupId,
+    qing.id,
+    "大孩子中文阅读社开张啦，欢迎推荐章节书。"
+  );
+  await postGroupMessage(
+    bigKidsGroupId,
+    grace.id,
+    "历史类和科普类书我家孩子最近很喜欢。"
+  );
+  await postGroupMessage(weekendGroupId, wei.id, "周末图书漂流站可以用来约线下交换。");
+  await postGroupMessage(
+    weekendGroupId,
+    anna.id,
+    "我周六下午会去 St. Paul 图书馆附近。"
+  );
 
   // Direct message threads.
-  sendDirectMessage(wei.id, lily.id, "你好 Lily，好饿的毛毛虫还能借吗？");
-  sendDirectMessage(lily.id, wei.id, "可以的，我这周三晚上在 Eden Prairie。");
-  sendDirectMessage(may.id, anna.id, "牛津树 Level 3 我想下个月借，可以排队吗？");
-  sendDirectMessage(anna.id, may.id, "可以，我先借给 Lily，回来后联系你。");
-  sendDirectMessage(qing.id, grace.id, "西游记少儿版适合二年级孩子吗？");
+  await sendDirectMessage(wei.id, lily.id, "你好 Lily，好饿的毛毛虫还能借吗？");
+  await sendDirectMessage(lily.id, wei.id, "可以的，我这周三晚上在 Eden Prairie。");
+  await sendDirectMessage(may.id, anna.id, "牛津树 Level 3 我想下个月借，可以排队吗？");
+  await sendDirectMessage(anna.id, may.id, "可以，我先借给 Lily，回来后联系你。");
+  await sendDirectMessage(qing.id, grace.id, "西游记少儿版适合二年级孩子吗？");
 
   // Wanted books: one open, one with "I'll buy", and one fulfilled request.
-  const reqCat = createBookRequest({
+  const reqCat = await createBookRequest({
     group_id: groupId,
     requester_user_id: grace.id,
     title: "活了100万次的猫",
     author: "佐野洋子",
     note: "想给孩子读，最好是精装中文版。",
   });
-  toggleRequestInterest(reqCat, wei.id, "want");
-  toggleRequestInterest(reqCat, lily.id, "buy");
+  await toggleRequestInterest(reqCat, wei.id, "want");
+  await toggleRequestInterest(reqCat, lily.id, "buy");
 
-  const reqMath = createBookRequest({
+  const reqMath = await createBookRequest({
     group_id: groupId,
     requester_user_id: may.id,
     title: "汉声数学图画书",
     author: "汉声杂志社",
     note: "如果有人从国内带,我也想团一本。",
   });
-  toggleRequestInterest(reqMath, lily.id, "want");
-  toggleRequestInterest(reqMath, qing.id, "want");
-  toggleRequestInterest(reqMath, anna.id, "buy");
+  await toggleRequestInterest(reqMath, lily.id, "want");
+  await toggleRequestInterest(reqMath, qing.id, "want");
+  await toggleRequestInterest(reqMath, anna.id, "buy");
 
-  const reqFulfilled = createBookRequest({
+  const reqFulfilled = await createBookRequest({
     group_id: groupId,
     requester_user_id: anna.id,
     title: "小猪佩奇双语故事",
     author: "英国快乐瓢虫出版公司",
     note: "已经有人提供，测试 fulfilled 状态。",
   });
-  toggleRequestInterest(reqFulfilled, grace.id, "want");
-  setRequestStatus(reqFulfilled, anna.id, "fulfilled");
+  await toggleRequestInterest(reqFulfilled, grace.id, "want");
+  await setRequestStatus(reqFulfilled, anna.id, "fulfilled");
 
   // Recommended reading lists.
-  const bedtimeListId = createBookList(
+  const bedtimeListId = await createBookList(
     groupId,
     lily.id,
     "3-6 岁睡前绘本精选",
     "陪孩子安静入睡的温柔绘本。"
   );
-  addBookListItem(
+  await addBookListItem(
     bedtimeListId,
     "晚安，月亮",
     "玛格丽特·怀兹·布朗",
     null,
     "经典中的经典"
   );
-  addBookListItem(
+  await addBookListItem(
     bedtimeListId,
     "逃家小兔",
     "玛格丽特·怀兹·布朗",
     null,
     "温暖的亲子之爱"
   );
-  addBookListItem(bedtimeListId, "月亮，生日快乐", "弗兰克·阿希", null, "想象力满分");
+  await addBookListItem(
+    bedtimeListId,
+    "月亮，生日快乐",
+    "弗兰克·阿希",
+    null,
+    "想象力满分"
+  );
 
-  const bridgeListId = createBookList(
+  const bridgeListId = await createBookList(
     groupId,
     may.id,
     "一年级桥梁书入门",
     "从绘本过渡到章节书，适合刚开始自主阅读的孩子。"
   );
-  addBookListItem(bridgeListId, "青蛙和蟾蜍", "阿诺德·洛贝尔", null, "短故事，字不多");
-  addBookListItem(bridgeListId, "一年级的小豆豆", "狐狸姐姐", null, "校园生活贴近孩子");
-  addBookListItem(bridgeListId, "不一样的卡梅拉", "约里斯·克利木", null, "趣味性强");
+  await addBookListItem(
+    bridgeListId,
+    "青蛙和蟾蜍",
+    "阿诺德·洛贝尔",
+    null,
+    "短故事，字不多"
+  );
+  await addBookListItem(
+    bridgeListId,
+    "一年级的小豆豆",
+    "狐狸姐姐",
+    null,
+    "校园生活贴近孩子"
+  );
+  await addBookListItem(
+    bridgeListId,
+    "不一样的卡梅拉",
+    "约里斯·克利木",
+    null,
+    "趣味性强"
+  );
 
-  const olderKidsListId = createBookList(
+  const olderKidsListId = await createBookList(
     groupId,
     qing.id,
     "8 岁以上中文保持书单",
     "让大孩子继续愿意读中文的章节书和漫画。"
   );
-  addBookListItem(olderKidsListId, "故宫里的大怪兽", "常怡", null, "历史和想象结合");
-  addBookListItem(
+  await addBookListItem(
+    olderKidsListId,
+    "故宫里的大怪兽",
+    "常怡",
+    null,
+    "历史和想象结合"
+  );
+  await addBookListItem(
     olderKidsListId,
     "大中华寻宝记",
     "孙家裕",
     null,
     "漫画形式，孩子接受度高"
   );
-  addBookListItem(
+  await addBookListItem(
     olderKidsListId,
     "哈利·波特与魔法石",
     "J.K. 罗琳",
@@ -754,27 +972,27 @@ function main() {
     "熟悉故事，适合中文阅读挑战"
   );
 
-  const englishStarterListId = createBookList(
+  const englishStarterListId = await createBookList(
     englishGroupId,
     anna.id,
     "英文启蒙第一阶段",
     "适合 3-6 岁孩子建立英文阅读兴趣。"
   );
-  addBookListItem(
+  await addBookListItem(
     englishStarterListId,
     "Pete the Cat",
     "Eric Litwin",
     null,
     "节奏感强"
   );
-  addBookListItem(
+  await addBookListItem(
     englishStarterListId,
     "Elephant & Piggie",
     "Mo Willems",
     null,
     "对话简单，孩子容易跟读"
   );
-  addBookListItem(
+  await addBookListItem(
     englishStarterListId,
     "Oxford Reading Tree",
     "Roderick Hunt",
@@ -782,15 +1000,27 @@ function main() {
     "分级体系清楚"
   );
 
-  const historyListId = createBookList(
+  const historyListId = await createBookList(
     bigKidsGroupId,
     qing.id,
     "大孩子中文阅读挑战",
     "章节书、历史和科普混合，帮助大孩子保持中文。"
   );
-  addBookListItem(historyListId, "林汉达中国历史故事集", "林汉达", null, "故事性强");
-  addBookListItem(historyListId, "怪杰佐罗力", "原裕", null, "幽默，适合过渡到章节书");
-  addBookListItem(
+  await addBookListItem(
+    historyListId,
+    "林汉达中国历史故事集",
+    "林汉达",
+    null,
+    "故事性强"
+  );
+  await addBookListItem(
+    historyListId,
+    "怪杰佐罗力",
+    "原裕",
+    null,
+    "幽默，适合过渡到章节书"
+  );
+  await addBookListItem(
     historyListId,
     "可怕的科学",
     "卡佳坦·波斯基特",
@@ -812,4 +1042,7 @@ function main() {
   console.log("Log in with any listed email (any name) to try it out.");
 }
 
-main();
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

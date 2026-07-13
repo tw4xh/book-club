@@ -14,7 +14,7 @@ import {
   getUserRating,
   qualityBonus,
 } from "@/lib/repo";
-import { directionsUrl, driveBetween, zipLabel } from "@/lib/geo";
+import { directionsUrl, driveBetween } from "@/lib/geo";
 import { StatusBadge } from "@/components/StatusBadge";
 import { LocationMap } from "@/components/LocationMap";
 import { CopyText } from "@/components/CopyText";
@@ -43,9 +43,9 @@ export default async function BookPage({
 
   if (!user) redirect(`/login?next=/books/${id}`);
 
-  const book = getBookById(id);
+  const book = await getBookById(id);
   if (!book) notFound();
-  if (!getMembership(user.id, book.group_id)) redirect("/");
+  if (!(await getMembership(user.id, book.group_id))) redirect("/");
 
   const isHolder = book.current_holder_user_id === user.id;
   const isOwner = book.owner_user_id === user.id;
@@ -54,23 +54,23 @@ export default async function BookPage({
   if (isHiddenLend && !isOwner && !isHolder) notFound();
   const reading = book.status === "reading";
 
-  const holdings = getBookHoldings(book.id);
-  const holderRating = getUserRating(book.current_holder_user_id);
-  const ownerRating = getUserRating(book.owner_user_id);
-  const reviews = getBookReviews(book.id);
-  const reviewSummary = getBookReviewSummary(book.id);
-  const owner = getUserById(book.owner_user_id);
+  const holdings = await getBookHoldings(book.id);
+  const holderRating = await getUserRating(book.current_holder_user_id);
+  const ownerRating = await getUserRating(book.owner_user_id);
+  const reviews = await getBookReviews(book.id);
+  const reviewSummary = await getBookReviewSummary(book.id);
+  const owner = await getUserById(book.owner_user_id);
   const ownerPay = owner
     ? {
-        paypal: payLink("paypal", owner.pay_paypal),
-        venmo: payLink("venmo", owner.pay_venmo),
+        paypal: payDisplay(owner.pay_paypal),
+        venmo: payLink(owner.pay_venmo),
         wechat: owner.pay_wechat,
       }
     : { paypal: null, venmo: null, wechat: null };
   const ownerHasPay =
     !isOwner && Boolean(ownerPay.paypal || ownerPay.venmo || ownerPay.wechat);
-  const myCredit = getCreditBalance(user.id, book.group_id);
-  const borrowCost = creditCostForBook(book.id, book.share_mode);
+  const myCredit = await getCreditBalance(user.id, book.group_id);
+  const borrowCost = await creditCostForBook(book.id, book.share_mode);
   const qBonus = qualityBonus(reviewSummary.avg);
   const canBorrowBook = myCredit >= borrowCost;
   const needCreditError = sp.error === "needcredit";
@@ -81,7 +81,7 @@ export default async function BookPage({
       day: "numeric",
     });
 
-  const locationLabel = zipLabel(book.location_zip) ?? book.current_location_area;
+  const locationLabel = book.location_zip;
   const drive = driveBetween(user.home_zip, book.location_zip);
   const directions = directionsUrl(user.home_zip, book.location_zip);
 
@@ -338,9 +338,9 @@ export default async function BookPage({
             <p className="mt-0.5 text-xs text-stone-500">{t("thank.hint")}</p>
           </div>
           <div className="space-y-2">
-            {ownerPay.paypal ? (
+            {ownerPay.paypal?.type === "link" ? (
               <a
-                href={ownerPay.paypal}
+                href={ownerPay.paypal.href}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center justify-between rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm font-medium text-stone-700 transition hover:bg-stone-50"
@@ -348,6 +348,17 @@ export default async function BookPage({
                 <span>💳 {t("thank.paypal")}</span>
                 <span className="text-brand-600">→</span>
               </a>
+            ) : ownerPay.paypal?.type === "copy" ? (
+              <div className="flex items-center justify-between gap-2 rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm">
+                <span className="min-w-0 truncate text-stone-700">
+                  💳 {t("thank.paypal")}: {ownerPay.paypal.value}
+                </span>
+                <CopyText
+                  text={ownerPay.paypal.value}
+                  label={t("common.copy")}
+                  copiedLabel={t("common.copied")}
+                />
+              </div>
             ) : null}
             {ownerPay.venmo ? (
               <a
@@ -486,18 +497,26 @@ function Stars({ n }: { n: number }) {
 }
 
 /**
- * Build a tappable payment URL from a stored handle. Accepts a full URL as-is,
- * otherwise constructs the PayPal.Me / Venmo link from a username. Returns null
- * when there's no handle.
+ * Build a tappable payment URL from a stored handle. Accepts a full URL as-is
+ * and otherwise constructs the Venmo link from a username.
  */
-function payLink(kind: "paypal" | "venmo", value: string | null): string | null {
+function payLink(value: string | null): string | null {
   const raw = (value ?? "").trim();
   if (!raw) return null;
   if (/^https?:\/\//i.test(raw)) return raw;
   const handle = encodeURIComponent(raw.replace(/^@/, ""));
-  return kind === "paypal"
-    ? `https://www.paypal.me/${handle}`
-    : `https://venmo.com/${handle}`;
+  return `https://venmo.com/${handle}`;
+}
+
+type PayDisplay = { type: "link"; href: string } | { type: "copy"; value: string };
+
+function payDisplay(value: string | null): PayDisplay | null {
+  const raw = (value ?? "").trim();
+  if (!raw) return null;
+  if (/^https?:\/\//i.test(raw)) return { type: "link", href: raw };
+  if (raw.includes("@")) return { type: "copy", value: raw };
+  const handle = encodeURIComponent(raw.replace(/^@/, ""));
+  return { type: "link", href: `https://www.paypal.me/${handle}` };
 }
 
 function HistoryRow({

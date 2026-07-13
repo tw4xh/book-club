@@ -5,6 +5,100 @@ import { getBookFacets, listBooks } from "@/lib/repo";
 import type { BookStatus } from "@/lib/types";
 import { BookCard } from "@/components/BookCard";
 import { BookLocationsMap } from "@/components/BookLocationsMap";
+import { CopyText } from "@/components/CopyText";
+import { demoLoginAction } from "@/app/actions";
+
+type DonationMethod =
+  | { type: "link"; label: string; href: string }
+  | { type: "copy"; label: string; value: string };
+
+function donationMethods(t: ReturnType<typeof createTranslator>): DonationMethod[] {
+  const methods: DonationMethod[] = [];
+  if (process.env.DONATION_PAYPAL_EMAIL) {
+    methods.push({
+      type: "copy",
+      label: t("donate.paypal"),
+      value: process.env.DONATION_PAYPAL_EMAIL,
+    });
+  } else if (process.env.DONATION_PAYPAL_URL) {
+    methods.push({
+      type: "link",
+      label: t("donate.paypal"),
+      href: process.env.DONATION_PAYPAL_URL,
+    });
+  }
+  if (process.env.DONATION_VENMO_ID) {
+    methods.push({
+      type: "copy",
+      label: t("donate.venmo"),
+      value: process.env.DONATION_VENMO_ID,
+    });
+  }
+  if (process.env.DONATION_WECHAT_ID) {
+    methods.push({
+      type: "copy",
+      label: t("donate.wechat"),
+      value: process.env.DONATION_WECHAT_ID,
+    });
+  }
+  return methods;
+}
+
+function DonationCard({
+  methods,
+  t,
+  className = "",
+}: {
+  methods: DonationMethod[];
+  t: ReturnType<typeof createTranslator>;
+  className?: string;
+}) {
+  return (
+    <div className={`card space-y-3 p-4 text-left ${className}`}>
+      <div>
+        <h2 className="text-base font-semibold text-stone-800">
+          💝 {t("donate.title")}
+        </h2>
+        <p className="mt-1 text-sm leading-6 text-stone-600">{t("donate.body")}</p>
+      </div>
+      {methods.length > 0 ? (
+        <div className="flex flex-wrap gap-2">
+          {methods.map((method) =>
+            method.type === "link" ? (
+              <a
+                key={method.label}
+                href={method.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-secondary px-3 py-1.5 text-xs"
+              >
+                {method.label}
+              </a>
+            ) : (
+              <div
+                key={method.label}
+                className="flex items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 py-1.5 text-xs"
+              >
+                <span className="font-medium text-stone-700">
+                  {method.label}: {method.value}
+                </span>
+                <CopyText
+                  text={method.value}
+                  label={t("common.copy")}
+                  copiedLabel={t("common.copied")}
+                />
+              </div>
+            )
+          )}
+        </div>
+      ) : (
+        <p className="rounded-xl bg-stone-50 px-3 py-2 text-sm text-stone-500">
+          {t("donate.notConfigured")}
+        </p>
+      )}
+    </div>
+  );
+}
 
 export default async function HomePage({
   searchParams,
@@ -14,6 +108,9 @@ export default async function HomePage({
   const locale = await getLocale();
   const t = createTranslator(locale);
   const { user, activeGroup } = await getSessionContext();
+  const donations = donationMethods(t);
+  const sp = await searchParams;
+  const demoStatus = typeof sp.demo === "string" ? sp.demo : "";
 
   if (!user) {
     return (
@@ -40,10 +137,19 @@ export default async function HomePage({
             </a>
           </p>
         </div>
+        <DonationCard methods={donations} t={t} className="mt-4 max-w-md" />
+        {demoStatus === "missing" ? (
+          <p className="mt-4 max-w-md rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-700">
+            {t("guest.demoMissing")}
+          </p>
+        ) : null}
         <div className="mt-6 flex flex-col gap-2 sm:flex-row">
           <Link href="/register" className="btn-primary">
             {t("guest.registerCta")}
           </Link>
+          <form action={demoLoginAction}>
+            <button className="btn-secondary w-full">{t("guest.demoCta")}</button>
+          </form>
           <Link href="/login" className="btn-secondary">
             {t("guest.loginCta")}
           </Link>
@@ -63,21 +169,19 @@ export default async function HomePage({
     );
   }
 
-  const sp = await searchParams;
   const get = (k: string) => (typeof sp[k] === "string" ? (sp[k] as string) : "");
   const filters = {
     search: get("q") || undefined,
     language: get("language") || undefined,
     age_range: get("age") || undefined,
-    area: get("area") || undefined,
     viewerUserId: user.id,
     status: (["available", "reading"].includes(get("status"))
       ? (get("status") as BookStatus)
       : undefined) as BookStatus | undefined,
   };
 
-  const books = listBooks(activeGroup.id, filters);
-  const facets = getBookFacets(activeGroup.id, user.id);
+  const books = await listBooks(activeGroup.id, filters);
+  const facets = await getBookFacets(activeGroup.id, user.id);
 
   return (
     <div>
@@ -95,6 +199,8 @@ export default async function HomePage({
           </p>
         </div>
       </div>
+
+      <DonationCard methods={donations} t={t} className="mb-4" />
 
       <form method="get" className="card mb-4 space-y-3 p-3">
         <input
@@ -121,14 +227,6 @@ export default async function HomePage({
               </option>
             ))}
           </select>
-          <select name="area" defaultValue={get("area")} className="input">
-            <option value="">{t("catalog.filter.area")}</option>
-            {facets.areas.map((v) => (
-              <option key={v} value={v}>
-                {v}
-              </option>
-            ))}
-          </select>
           <select name="status" defaultValue={get("status")} className="input">
             <option value="">{t("catalog.filter.status")}</option>
             <option value="available">{t("status.available")}</option>
@@ -141,11 +239,11 @@ export default async function HomePage({
       </form>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
-        <div className="lg:order-2 lg:sticky lg:top-20">
+        <div className="min-w-0 lg:order-2 lg:sticky lg:top-20">
           <BookLocationsMap books={books} viewerZip={user.home_zip} t={t} />
         </div>
 
-        <div className="lg:order-1">
+        <div className="min-w-0 lg:order-1">
           <div className="mb-3 flex items-center justify-between">
             <h1 className="text-lg font-semibold">{t("catalog.title")}</h1>
             <span className="text-sm text-stone-500">

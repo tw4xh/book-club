@@ -13,9 +13,9 @@ export default async function ContributorsPage() {
   if (!user) redirect("/login?next=/contributors");
   if (!activeGroup) redirect("/groups");
 
-  const board = getGroupLeaderboard(activeGroup.id);
-  const mine = getUserContribution(user.id, activeGroup.id);
-  const myCredit = getCreditBalance(user.id, activeGroup.id);
+  const board = await getGroupLeaderboard(activeGroup.id);
+  const mine = await getUserContribution(user.id, activeGroup.id);
+  const myCredit = await getCreditBalance(user.id, activeGroup.id);
 
   return (
     <div className="space-y-5">

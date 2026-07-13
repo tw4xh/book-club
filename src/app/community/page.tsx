@@ -12,9 +12,10 @@ export default async function CommunityPage() {
   if (!user) redirect("/login?next=/community");
   if (!activeGroup) redirect("/groups");
 
-  const dmUnread = getUnreadDmCount(user.id);
+  const dmUnread = await getUnreadDmCount(user.id);
 
   const tiles = [
+    { href: "/assistant", icon: "🤖", key: "assistant", badge: 0 },
     { href: "/requests", icon: "🙋", key: "requests", badge: 0 },
     { href: "/lists", icon: "📚", key: "lists", badge: 0 },
     { href: "/contributors", icon: "🏆", key: "board", badge: 0 },

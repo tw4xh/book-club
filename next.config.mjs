@@ -1,6 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  serverExternalPackages: ["better-sqlite3", "zipcodes"],
+  serverExternalPackages: ["pg", "zipcodes"],
 };
 
 export default nextConfig;

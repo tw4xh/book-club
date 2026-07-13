@@ -17,11 +17,11 @@ export default async function ListDetailPage({
 
   if (!user) redirect(`/login?next=/lists/${id}`);
 
-  const list = getBookList(id);
+  const list = await getBookList(id);
   if (!list) notFound();
-  if (!getMembership(user.id, list.group_id)) redirect("/lists");
+  if (!(await getMembership(user.id, list.group_id))) redirect("/lists");
 
-  const items = getBookListItems(id);
+  const items = await getBookListItems(id);
 
   return (
     <div className="mx-auto max-w-md space-y-4">

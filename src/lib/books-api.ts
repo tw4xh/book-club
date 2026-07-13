@@ -158,6 +158,20 @@ async function fetchTanshu(isbn: string): Promise<BookMeta | null> {
   };
 }
 
+function mergeTanshuFallback(base: BookMeta, tanshu: BookMeta | null): BookMeta {
+  if (!tanshu) return base;
+  return {
+    ...base,
+    title: base.title ?? tanshu.title,
+    authors: base.authors.length > 0 ? base.authors : tanshu.authors,
+    language: base.language ?? tanshu.language,
+    categories: base.categories.length > 0 ? base.categories : tanshu.categories,
+    cover_url: base.cover_url ?? tanshu.cover_url,
+    publisher: base.publisher ?? tanshu.publisher,
+    published_year: base.published_year ?? tanshu.published_year,
+  };
+}
+
 export async function lookupIsbn(
   rawIsbn: string | null | undefined
 ): Promise<BookMeta | null> {
@@ -172,6 +186,10 @@ export async function lookupIsbn(
         const ol = await fetchOpenLibrary(isbn).catch(() => null);
         if (ol?.cover_url) google.cover_url = ol.cover_url;
       }
+      if (!google.cover_url) {
+        const tanshu = await fetchTanshu(isbn).catch(() => null);
+        return mergeTanshuFallback(google, tanshu);
+      }
       return google;
     }
   } catch {
@@ -180,7 +198,13 @@ export async function lookupIsbn(
 
   try {
     const openLibrary = await fetchOpenLibrary(isbn);
-    if (openLibrary && openLibrary.title) return openLibrary;
+    if (openLibrary && openLibrary.title) {
+      if (!openLibrary.cover_url) {
+        const tanshu = await fetchTanshu(isbn).catch(() => null);
+        return mergeTanshuFallback(openLibrary, tanshu);
+      }
+      return openLibrary;
+    }
   } catch {
     // fall through to Tanshu if configured
   }

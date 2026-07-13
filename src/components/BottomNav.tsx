@@ -26,6 +26,7 @@ const ITEMS = [
 // stays highlighted while you're in them.
 const COMMUNITY_PATHS = [
   "/community",
+  "/assistant",
   "/requests",
   "/lists",
   "/chat",

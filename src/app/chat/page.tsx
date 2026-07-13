@@ -12,7 +12,7 @@ export default async function ChatPage() {
   if (!user) redirect("/login?next=/chat");
   if (!activeGroup) redirect("/groups");
 
-  const messages = getGroupMessages(activeGroup.id);
+  const messages = await getGroupMessages(activeGroup.id);
   const fmt = (iso: string) =>
     new Date(iso).toLocaleString(locale === "zh" ? "zh-CN" : "en-US", {
       month: "short",

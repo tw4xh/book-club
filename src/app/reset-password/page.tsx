@@ -57,6 +57,7 @@ export default async function ResetPasswordPage({
             tooShortMessage={t("login.passwordInvalid")}
             showLabel={t("password.show")}
             hideLabel={t("password.hide")}
+            capsLockLabel={t("password.capsLock")}
           />
         </div>
 

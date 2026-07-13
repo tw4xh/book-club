@@ -19,6 +19,7 @@ const zh: Dict = {
   "nav.register": "注册",
   "nav.logout": "退出",
   "nav.notifications": "通知",
+  "nav.privacy": "隐私与 AI 使用说明",
 
   "notif.title": "通知",
   "notif.subtitle": "书友会的更新会显示在这里。",
@@ -32,6 +33,8 @@ const zh: Dict = {
   "nav.community": "社区",
   "community.title": "社区",
   "community.subtitle": "和书友们一起聊书、求书、推荐书单。",
+  "community.assistant": "图书助手",
+  "community.assistantDesc": "问谁有某本书，或下一本读什么",
   "community.requests": "想要的书",
   "community.requestsDesc": "提出想读的书，大家一起响应",
   "community.lists": "推荐书单",
@@ -45,7 +48,7 @@ const zh: Dict = {
 
   "gate.title": "先借出，才能借入",
   "gate.balance": "借这本书需要 {cost} 个 credit，你当前有 {have} 个。",
-  "gate.hintLend": "把你的书分享出去：被借阅 +1，传阅(送出不还) +2 credit。",
+  "gate.hintLend": "把你的书分享出去：被借阅 +1，漂流(送出不还) +2 credit。",
   "gate.blocked": "你的 credit 不够，暂时不能借哦。",
   "gate.cta": "去添加一本书",
 
@@ -54,10 +57,12 @@ const zh: Dict = {
   "credit.reason.starter": "初始积分（加入书友会赠送）",
   "credit.reason.lend": "书被拿走，赚取 credit",
   "credit.reason.borrow": "拿走书，消耗 credit",
-  "credit.costFlow": "这是传阅书（拿走归你）：将消耗 {cost} credit",
+  "credit.reason.review": "写书评，获得 credit",
+  "credit.reason.community": "社区发言，获得 credit",
+  "credit.costFlow": "这是漂流书（拿走归你）：将消耗 {cost} credit",
   "credit.costLend": "这是借阅书（需归还）：将消耗 {cost} credit",
   "credit.how":
-    "规则：传阅书（送出不还）拿走 +2/−2，借阅书（要还）+1/−1，高分好书再加 +1~+2。别人拿你的书你得分，你拿别人的书扣分。credit 守恒，刷不出来。",
+    "规则：漂流书（送出不还）拿走 +2/−2，借阅书（要还）+1/−1，高分好书再加 +1~+2。写书评和社区发言也可获得少量 credit：每本书评最多 +1，每天群聊发言最多 +1。",
 
   "level.new": "🌱 新书友",
   "level.active": "📗 热心书友",
@@ -157,6 +162,7 @@ const zh: Dict = {
 
   "password.show": "显示密码",
   "password.hide": "隐藏密码",
+  "password.capsLock": "大写锁定已开启",
 
   "login.title": "登录",
   "login.subtitle": "已有账号请输入邮箱和密码登录。",
@@ -196,12 +202,16 @@ const zh: Dict = {
   "register.passwordHint": "至少 6 位。",
   "register.submit": "注册",
   "register.haveAccount": "已有账号？去登录",
+  "register.consentPre": "我已阅读并同意",
+  "register.consentLink": "《隐私与 AI 使用说明》",
+  "register.consentRequired": "请先阅读并同意《隐私与 AI 使用说明》。",
 
   "forgot.title": "找回密码",
   "forgot.subtitle": "输入注册邮箱，我们会生成一个一次性密码重置链接。",
   "forgot.sent": "如果这个邮箱存在，重置链接已经生成。",
-  "forgot.devTitle": "开发测试链接",
-  "forgot.devHint": "真实上线后这里会改成发送邮件；现在为了测试，直接显示重置入口。",
+  "forgot.devTitle": "本地测试用重置入口",
+  "forgot.devHint":
+    "这是开发环境的临时入口，方便测试找回密码流程。正式上线后不会显示在页面上，会通过邮件发送。",
   "forgot.openReset": "打开重置密码链接",
   "forgot.submit": "发送重置链接",
   "forgot.backToLogin": "返回登录",
@@ -226,18 +236,19 @@ const zh: Dict = {
   "catalog.modeHelpLend": "借阅：书本身还是书主的，读完需要还给书主。",
   "catalog.returnTimeHelp":
     "合理还书时间：一般建议 2–4 周内归还；套装或厚书可和书主另行约定。",
-  "catalog.modeHelpFlow": "传阅：读完传给下一位，不需要还给原书主。",
+  "catalog.modeHelpFlow": "漂流：读完传给下一位，不需要还给原书主。",
   "catalog.mapTitle": "书都在哪里",
   "catalog.mapHint": "地图按书当前所在 ZIP 聚合显示；数字代表该位置的书本数量。",
   "catalog.mapBookCount": "{n} 本",
   "catalog.mapDrive": "约 {min} 分钟",
   "catalog.mapDirections": "导航",
   "catalog.mapMixed": "两种都有",
+  "catalog.mapReading": "半透明：在读",
 
   "status.available": "空闲",
   "status.reading": "在读",
 
-  "mode.flow": "传阅",
+  "mode.flow": "漂流",
   "mode.lend": "借阅",
 
   "book.owner": "书主",
@@ -263,7 +274,7 @@ const zh: Dict = {
 
   "book.contactTitle": "想读这本书？",
   "book.contactBody":
-    "这本书在大家之间传阅，读完不必归还，直接传给下一个想读的人就好。请联系现在持有它的人，自行约定怎么取书。",
+    "这本书在大家之间漂流，读完不必归还，直接传给下一个想读的人就好。请联系现在持有它的人，自行约定怎么取书。",
   "book.lendContactBody":
     "这是借阅的书：联系现在持有它的人取书，读完后请归还给最初的分享者。请自行约定取书方式。",
   "book.noContact": "TA 还没有留下联系方式。",
@@ -307,6 +318,16 @@ const zh: Dict = {
   "rate.comment": "评价（选填）",
   "rate.submit": "提交评分",
   "rate.done": "已评分",
+  "profile.title": "我的信息",
+  "profile.hint": "这些信息会用于显示书主、当前位置估算和联系沟通。",
+  "profile.name": "显示姓名",
+  "profile.wechat": "微信昵称",
+  "profile.contact": "联系方式",
+  "profile.area": "所在区域（选填）",
+  "profile.zip": "邮编 ZIP",
+  "profile.save": "保存我的信息",
+  "profile.saved": "个人信息已保存。",
+  "profile.missing": "请填写显示姓名。",
   "contact.title": "联系设置",
   "contact.on": "已开启：其他成员可以看到你的联系方式",
   "contact.off": "已关闭：你的联系方式对其他人隐藏",
@@ -316,7 +337,7 @@ const zh: Dict = {
   "pay.title": "收款方式（接受答谢）",
   "pay.hint":
     "填写后，借你书的人可以选择通过这些方式答谢你（自愿，平台不经手转账）。可留空。",
-  "pay.paypal": "PayPal 用户名或 PayPal.Me 链接",
+  "pay.paypal": "PayPal 邮箱或 PayPal.Me 链接",
   "pay.venmo": "Venmo 用户名",
   "pay.wechat": "微信号（用于转账）",
   "pay.save": "保存收款方式",
@@ -356,7 +377,7 @@ const zh: Dict = {
   "add.field.location": "当前存放区域",
   "add.field.zip": "存放邮编 (ZIP)",
   "add.mode.title": "分享方式",
-  "add.mode.flow": "传阅",
+  "add.mode.flow": "漂流",
   "add.mode.flowDesc": "读完传给下一个人，不用还给我",
   "add.mode.lend": "借阅",
   "add.mode.lendDesc": "读完请还给我",
@@ -370,7 +391,7 @@ const zh: Dict = {
 
   "import.title": "从 Google Sheet 批量导入",
   "import.hint":
-    "把表格设置为“知道链接的人可查看”，然后粘贴 Google Sheet 链接。第一行需要是表头。",
+    "把表格设置为“知道链接的人可查看”，然后粘贴 Google Sheet 链接。第一行需要是表头；有 ISBN 的行会自动用图书 API 补齐空字段。",
   "import.urlLabel": "Google Sheet 链接",
   "import.urlPlaceholder": "https://docs.google.com/spreadsheets/d/...",
   "import.columns":
@@ -390,11 +411,38 @@ const zh: Dict = {
   "shelf.heldEmpty": "你手里暂时没有书。在书目里找一本，拿到后点“我拿到这本书了”。",
   "shelf.owned": "我最初分享的书",
   "shelf.ownedEmpty": "你还没有分享任何图书。",
+  "shelf.withdrawHint":
+    "勾选后可批量把自己的书从当前书友会撤出；撤出后会从书目和地图中移除。",
+  "shelf.withdrawSelect": "选择撤出《{title}》",
+  "shelf.withdrawSubmit": "撤出选中的书",
+  "shelf.withdrawSuccess": "已撤出 {n} 本书。",
+  "shelf.withdrawNone": "请先勾选要撤出的书。",
+  "shelf.transferTarget": "转移到哪个书友会",
+  "shelf.transferHint":
+    "只能转移你自己分享、并且现在还在你手里的书；借出或漂流到别人手里的书需要先拿回。",
+  "shelf.transferNoTarget": "你还没有加入其他书友会",
+  "shelf.transferSubmit": "转移选中的书",
+  "shelf.transferSuccess": "已转移 {n} 本书。",
+  "shelf.transferNone": "没有可转移的书。请先勾选当前在你手里的书。",
 
   "groups.title": "我的书友会",
   "groups.subtitle": "一个书友会就是一群一起分享书的人。",
   "groups.active": "当前查看",
+  "groups.adminBadge": "会主",
   "groups.switch": "切换到这里",
+  "groups.switchShort": "切换",
+  "groups.leave": "退出书友会",
+  "groups.leaveSuccess": "已退出书友会。",
+  "groups.leaveLastAdmin":
+    "你是这个书友会最后一个管理员。请先指定另一个管理员后再退出。",
+  "groups.close": "关闭书友会",
+  "groups.closeHint":
+    "关闭后会删除这个书友会里的书、成员关系、聊天和书单。请谨慎操作。",
+  "groups.closeConfirmLabel": "输入书友会名称确认关闭",
+  "groups.closeSubmit": "确认关闭书友会",
+  "groups.closeSuccess": "书友会已关闭。",
+  "groups.closeConfirmError": "输入的书友会名称不匹配，没有关闭。",
+  "groups.closeMissing": "这个书友会已经不存在。",
   "groups.invite": "邀请链接",
   "groups.copyInvite": "复制邀请链接",
   "groups.create": "创建新的书友会",
@@ -430,7 +478,52 @@ const zh: Dict = {
   "guest.openSource": "项目代码开源，欢迎查看、改进，也欢迎其他社区复制使用：",
   "guest.github": "GitHub 开源项目",
   "guest.registerCta": "注册开始使用",
+  "guest.demoCta": "先用示例数据体验",
+  "guest.demoMissing": "还没有生成示例数据。请先运行 npm run seed:reset。",
   "guest.loginCta": "已有账号，去登录",
+
+  "donate.title": "支持邻里书屋",
+  "donate.body":
+    "邻里书屋希望保持公益和开源。捐款会用于域名、数据库、图书信息 API、部署等必要运行成本。",
+  "donate.paypal": "PayPal",
+  "donate.venmo": "Venmo",
+  "donate.wechat": "微信",
+  "donate.notConfigured": "捐款方式还未配置。如愿意支持，请联系网站维护者。",
+
+  "assistant.title": "图书助手",
+  "assistant.subtitle":
+    "可以问谁有某本书、书友会有哪些书、下一本读什么，或者把找不到的书发布到“想要的书”。",
+  "assistant.askLabel": "你想问什么？",
+  "assistant.placeholder": "例如：谁有小王子？我想要神奇树屋。6 岁孩子下一本读什么？",
+  "assistant.askSubmit": "问助手",
+  "assistant.examplesTitle": "可以这样问",
+  "assistant.exampleFind": "谁有《小王子》？现在在谁那里？",
+  "assistant.exampleWant": "我想要神奇树屋，有人有吗？",
+  "assistant.exampleRecommend": "我家 6 岁孩子喜欢动物，下一本读什么？",
+  "assistant.answerTitle": "助手回答",
+  "assistant.localUsed": "本地数据库",
+  "assistant.aiUsed": "Gemini",
+  "assistant.empty": "请先输入一个问题。",
+  "assistant.found": "我在当前书友会里找到了 {n} 本可能相关的书：",
+  "assistant.notFound":
+    "当前书友会还没有找到《{title}》。你可以把它发布到“想要的书”，让大家响应。",
+  "assistant.createRequestHint": "要把《{title}》发布到“想要的书”吗？",
+  "assistant.createRequest": "发布到想要的书",
+  "assistant.recommendLocal":
+    "下面是当前书友会里空闲的几本书，可以先从这些开始。配置 Gemini 后，我可以根据年龄、兴趣和阅读偏好给更细的推荐。",
+  "assistant.recommendEmpty": "当前书友会暂时没有空闲书可以推荐。",
+  "assistant.exampleList": "我都有什么书？书友会里现在有哪些可借的书？",
+  "assistant.listMine": "你在当前书友会分享了 {n} 本书：",
+  "assistant.listMineEmpty":
+    "你在当前书友会还没有分享任何书。可以到「添加图书」发布你的书。",
+  "assistant.listCatalog": "当前书友会共有 {n} 本可借的书，下面是其中一些：",
+  "assistant.listCatalogEmpty": "当前书友会暂时还没有可借的书。",
+  "assistant.specify": "请告诉我具体的书名，例如「谁有《小王子》？」",
+  "assistant.modelHint":
+    "AI 回答由免费模型 Gemini 3.1 Flash Lite 提供，全站每天最多 {n} 次 AI 提问。额度用完后，只能回答最基础的本地问题（谁有某本书、我有什么书、社区书目等）。",
+  "assistant.quotaNotice":
+    "今日 AI 提问额度（{n} 次）已用完，暂时只能根据本地数据回答最基础的问题。明天会自动恢复。",
+  "assistant.privacyLink": "隐私与 AI 使用说明",
 };
 
 const en: Dict = {
@@ -450,6 +543,8 @@ const en: Dict = {
   "nav.community": "Community",
   "community.title": "Community",
   "community.subtitle": "Talk books, request titles, and share reading lists.",
+  "community.assistant": "Book assistant",
+  "community.assistantDesc": "Ask who has a book or what to read next",
   "community.requests": "Wanted books",
   "community.requestsDesc": "Ask for a book; others can chime in",
   "community.lists": "Reading lists",
@@ -473,10 +568,12 @@ const en: Dict = {
   "credit.reason.starter": "Initial credit (welcome bonus)",
   "credit.reason.lend": "Your book was taken — credit earned",
   "credit.reason.borrow": "Took a book — credit spent",
+  "credit.reason.review": "Wrote a review — credit earned",
+  "credit.reason.community": "Posted in the community — credit earned",
   "credit.costFlow": "Pass-on book (yours to keep): costs {cost} credit",
   "credit.costLend": "Lend book (must return): costs {cost} credit",
   "credit.how":
-    "Rule: pass-on books (no return) are +2/−2, lend books (returned) +1/−1, plus +1~+2 for highly-rated books. You earn when your book is taken, spend when you take one. Credit is conserved, so it can't be farmed.",
+    "Rule: pass-on books (no return) are +2/−2, lend books (returned) +1/−1, plus +1~+2 for highly-rated books. Reviews and community posts can also earn small credits: at most +1 per book reviewed and +1 per day for group chat.",
 
   "level.new": "🌱 Newcomer",
   "level.active": "📗 Active sharer",
@@ -572,6 +669,7 @@ const en: Dict = {
   "nav.register": "Register",
   "nav.logout": "Log out",
   "nav.notifications": "Notifications",
+  "nav.privacy": "Privacy & AI Notice",
 
   "lang.switch": "中文",
 
@@ -589,6 +687,7 @@ const en: Dict = {
 
   "password.show": "Show password",
   "password.hide": "Hide password",
+  "password.capsLock": "Caps Lock is on",
 
   "login.title": "Log in",
   "login.subtitle": "Already have an account? Enter your email and password.",
@@ -631,14 +730,17 @@ const en: Dict = {
   "register.passwordHint": "At least 6 characters.",
   "register.submit": "Register",
   "register.haveAccount": "Already have an account? Log in",
+  "register.consentPre": "I have read and agree to the",
+  "register.consentLink": "Privacy & AI Notice",
+  "register.consentRequired": "Please read and agree to the Privacy & AI Notice first.",
 
   "forgot.title": "Reset your password",
   "forgot.subtitle":
     "Enter your account email and we'll generate a one-time password reset link.",
   "forgot.sent": "If that email exists, a reset link has been generated.",
-  "forgot.devTitle": "Development test link",
+  "forgot.devTitle": "Local test reset link",
   "forgot.devHint":
-    "In production this would be emailed. For local testing, open the reset link directly here.",
+    "This temporary link is only shown in development so you can test the password reset flow. In production it will be sent by email instead.",
   "forgot.openReset": "Open reset password link",
   "forgot.submit": "Send reset link",
   "forgot.backToLogin": "Back to login",
@@ -674,6 +776,7 @@ const en: Dict = {
   "catalog.mapDrive": "about {min} min",
   "catalog.mapDirections": "Directions",
   "catalog.mapMixed": "Both",
+  "catalog.mapReading": "Transparent: being read",
 
   "status.available": "Free",
   "status.reading": "Being read",
@@ -756,6 +859,17 @@ const en: Dict = {
   "rate.comment": "Comment (optional)",
   "rate.submit": "Submit rating",
   "rate.done": "Rated",
+  "profile.title": "My profile",
+  "profile.hint":
+    "This information is used to show owners, estimate location, and help members contact each other.",
+  "profile.name": "Display name",
+  "profile.wechat": "WeChat nickname",
+  "profile.contact": "Contact info",
+  "profile.area": "Area (optional)",
+  "profile.zip": "ZIP code",
+  "profile.save": "Save profile",
+  "profile.saved": "Profile saved.",
+  "profile.missing": "Please enter a display name.",
   "contact.title": "Contact settings",
   "contact.on": "On: other members can see your contact info",
   "contact.off": "Off: your contact info is hidden from others",
@@ -765,7 +879,7 @@ const en: Dict = {
   "pay.title": "Payment methods (to receive thanks)",
   "pay.hint":
     "If you add these, people who borrow your books can choose to thank you. Transfers happen directly between you — the platform never handles money. Optional.",
-  "pay.paypal": "PayPal username or PayPal.Me link",
+  "pay.paypal": "PayPal email or PayPal.Me link",
   "pay.venmo": "Venmo username",
   "pay.wechat": "WeChat ID (for transfers)",
   "pay.save": "Save payment methods",
@@ -821,7 +935,7 @@ const en: Dict = {
 
   "import.title": "Import from Google Sheet",
   "import.hint":
-    'Set the sheet to "Anyone with the link can view", then paste the Google Sheet link. The first row should be headers.',
+    'Set the sheet to "Anyone with the link can view", then paste the Google Sheet link. The first row should be headers; rows with ISBN will auto-fill missing fields from book APIs.',
   "import.urlLabel": "Google Sheet link",
   "import.urlPlaceholder": "https://docs.google.com/spreadsheets/d/...",
   "import.columns":
@@ -843,11 +957,39 @@ const en: Dict = {
     'You don\'t have any books right now. Find one in the catalog and tap "I have it now" once you receive it.',
   "shelf.owned": "Originally shared by me",
   "shelf.ownedEmpty": "You haven't shared any books yet.",
+  "shelf.withdrawHint":
+    "Select books to withdraw them from the current club in bulk; withdrawn books are removed from the catalog and map.",
+  "shelf.withdrawSelect": 'Select "{title}" to withdraw',
+  "shelf.withdrawSubmit": "Withdraw selected books",
+  "shelf.withdrawSuccess": "Withdrew {n} books.",
+  "shelf.withdrawNone": "Select at least one book to withdraw.",
+  "shelf.transferTarget": "Transfer to which club",
+  "shelf.transferHint":
+    "Only books you originally shared and currently hold yourself can be transferred. Books lent out or passed to someone else need to come back first.",
+  "shelf.transferNoTarget": "You have not joined another club yet",
+  "shelf.transferSubmit": "Transfer selected books",
+  "shelf.transferSuccess": "Transferred {n} books.",
+  "shelf.transferNone":
+    "No books were transferred. Select books that are currently with you.",
 
   "groups.title": "My Clubs",
   "groups.subtitle": "A club is just a group of people sharing books together.",
   "groups.active": "Viewing now",
+  "groups.adminBadge": "Owner",
   "groups.switch": "Switch to this",
+  "groups.switchShort": "Switch",
+  "groups.leave": "Leave club",
+  "groups.leaveSuccess": "You left the club.",
+  "groups.leaveLastAdmin":
+    "You are the last admin of this club. Assign another admin before leaving.",
+  "groups.close": "Close club",
+  "groups.closeHint":
+    "Closing deletes this club's books, memberships, chats, and lists. Please be careful.",
+  "groups.closeConfirmLabel": "Type the club name to confirm closing",
+  "groups.closeSubmit": "Confirm close club",
+  "groups.closeSuccess": "The club has been closed.",
+  "groups.closeConfirmError": "The club name did not match, so it was not closed.",
+  "groups.closeMissing": "This club no longer exists.",
   "groups.invite": "Invite link",
   "groups.copyInvite": "Copy invite link",
   "groups.create": "Create a new club",
@@ -885,7 +1027,59 @@ const en: Dict = {
     "The project is open source. You can review it, improve it, or reuse it for another community:",
   "guest.github": "GitHub open source project",
   "guest.registerCta": "Register to get started",
+  "guest.demoCta": "Try the demo first",
+  "guest.demoMissing":
+    "Demo data has not been created yet. Run npm run seed:reset first.",
   "guest.loginCta": "Already have an account? Log in",
+
+  "donate.title": "Support Neighbor Bookshelf",
+  "donate.body":
+    "Neighbor Bookshelf is intended to stay nonprofit and open source. Donations help cover domain, database, book metadata APIs, deployment, and other necessary operating costs.",
+  "donate.paypal": "PayPal",
+  "donate.venmo": "Venmo",
+  "donate.wechat": "WeChat",
+  "donate.notConfigured":
+    "Donation methods are not configured yet. If you would like to support the site, please contact the maintainer.",
+
+  "assistant.title": "Book Assistant",
+  "assistant.subtitle":
+    "Ask who has a book, what books the club has, what to read next, or post a missing title to Wanted Books.",
+  "assistant.askLabel": "What would you like to ask?",
+  "assistant.placeholder":
+    "For example: Who has The Little Prince? I want Magic Tree House. What should my 6-year-old read next?",
+  "assistant.askSubmit": "Ask assistant",
+  "assistant.examplesTitle": "Try asking",
+  "assistant.exampleFind": 'Who has "The Little Prince"? Who has it now?',
+  "assistant.exampleWant": "I want Magic Tree House. Does anyone have it?",
+  "assistant.exampleRecommend":
+    "My 6-year-old likes animals. What should they read next?",
+  "assistant.answerTitle": "Assistant answer",
+  "assistant.localUsed": "Local database",
+  "assistant.aiUsed": "Gemini",
+  "assistant.empty": "Please enter a question first.",
+  "assistant.found": "I found {n} possible matches in the current club:",
+  "assistant.notFound":
+    'I could not find "{title}" in the current club. You can post it to Wanted Books so others can respond.',
+  "assistant.createRequestHint": 'Post "{title}" to Wanted Books?',
+  "assistant.createRequest": "Post to Wanted Books",
+  "assistant.recommendLocal":
+    "Here are a few available books in the current club. Once Gemini is configured, I can make more specific recommendations based on age, interests, and reading preferences.",
+  "assistant.recommendEmpty":
+    "There are no available books in the current club to recommend right now.",
+  "assistant.exampleList":
+    "What books do I have? What's available in this club right now?",
+  "assistant.listMine": "You have shared {n} book(s) in this club:",
+  "assistant.listMineEmpty":
+    'You haven\'t shared any books in this club yet. Add one from "Add book".',
+  "assistant.listCatalog":
+    "This club has {n} available book(s). Here are some of them:",
+  "assistant.listCatalogEmpty": "This club has no available books yet.",
+  "assistant.specify": 'Tell me a specific title, e.g. "Who has The Little Prince?"',
+  "assistant.modelHint":
+    "AI answers are powered by the free Gemini 3.1 Flash Lite model, limited to {n} AI questions per day site-wide. Once used up, only basic local questions can be answered (who has a book, what books I have, the club catalog, etc.).",
+  "assistant.quotaNotice":
+    "Today's AI question limit ({n}) has been used up. For now I can only answer basic questions from local data. It resets tomorrow.",
+  "assistant.privacyLink": "Privacy & AI notice",
 };
 
 const DICTS: Record<Locale, Dict> = { zh, en };

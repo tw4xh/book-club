@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { getDb } from "./db";
+import { db, one, run, sql, withTransaction, type Executor } from "./db";
 import type {
   Book,
   BookHolding,
@@ -69,15 +69,14 @@ const BOOK_SELECT = `
 // Users
 // ---------------------------------------------------------------------------
 
-export function getUserById(id: string): User | undefined {
-  return getDb().prepare("SELECT * FROM users WHERE id = ?").get(id) as
-    User | undefined;
+export async function getUserById(id: string): Promise<User | undefined> {
+  return one<User>("SELECT * FROM users WHERE id = $1", [id]);
 }
 
-export function getUserByEmail(email: string): User | undefined {
-  return getDb()
-    .prepare("SELECT * FROM users WHERE email = ?")
-    .get(email.toLowerCase().trim()) as User | undefined;
+export async function getUserByEmail(email: string): Promise<User | undefined> {
+  return one<User>("SELECT * FROM users WHERE email = $1", [
+    email.toLowerCase().trim(),
+  ]);
 }
 
 export interface UpsertUserInput {
@@ -91,57 +90,62 @@ export interface UpsertUserInput {
 }
 
 /** Find a user by email or create one. Updates profile fields when provided. */
-export function upsertUserByEmail(input: UpsertUserInput): User {
-  const db = getDb();
+export async function upsertUserByEmail(input: UpsertUserInput): Promise<User> {
   const email = input.email.toLowerCase().trim();
-  const existing = getUserByEmail(email);
+  const existing = await getUserByEmail(email);
   if (existing) {
-    db.prepare(
+    await run(
       `UPDATE users SET
-         name = ?,
-         password_hash = COALESCE(password_hash, ?),
-         wechat_nickname = COALESCE(?, wechat_nickname),
-         contact = COALESCE(?, contact),
-         home_area = COALESCE(?, home_area),
-         home_zip = COALESCE(?, home_zip)
-       WHERE id = ?`
-    ).run(
-      input.name.trim() || existing.name,
+         name = $1,
+         password_hash = COALESCE(password_hash, $2),
+         wechat_nickname = COALESCE($3, wechat_nickname),
+         contact = COALESCE($4, contact),
+         home_area = COALESCE($5, home_area),
+         home_zip = COALESCE($6, home_zip)
+       WHERE id = $7`,
+      [
+        input.name.trim() || existing.name,
+        input.password_hash ?? null,
+        input.wechat_nickname ?? null,
+        input.contact ?? null,
+        input.home_area ?? null,
+        input.home_zip ?? null,
+        existing.id,
+      ]
+    );
+    return (await getUserById(existing.id))!;
+  }
+
+  const id = newId();
+  await run(
+    `INSERT INTO users (
+       id, name, email, password_hash, wechat_nickname, contact, home_area, home_zip, created_at
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    [
+      id,
+      input.name.trim() || email,
+      email,
       input.password_hash ?? null,
       input.wechat_nickname ?? null,
       input.contact ?? null,
       input.home_area ?? null,
       input.home_zip ?? null,
-      existing.id
-    );
-    return getUserById(existing.id)!;
-  }
-
-  const id = newId();
-  db.prepare(
-    `INSERT INTO users (
-       id, name, email, password_hash, wechat_nickname, contact, home_area, home_zip, created_at
-     )
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(
-    id,
-    input.name.trim() || email,
-    email,
-    input.password_hash ?? null,
-    input.wechat_nickname ?? null,
-    input.contact ?? null,
-    input.home_area ?? null,
-    input.home_zip ?? null,
-    nowIso()
+      nowIso(),
+    ]
   );
-  return getUserById(id)!;
+  return (await getUserById(id))!;
 }
 
 /** Opt in/out of letting other members see your contact info. */
-export function setUserContactable(userId: string, contactable: boolean): void {
-  getDb()
-    .prepare("UPDATE users SET contactable = ? WHERE id = ?")
-    .run(contactable ? 1 : 0, userId);
+export async function setUserContactable(
+  userId: string,
+  contactable: boolean
+): Promise<void> {
+  await run("UPDATE users SET contactable = $1 WHERE id = $2", [
+    contactable ? 1 : 0,
+    userId,
+  ]);
 }
 
 export interface PaymentHandles {
@@ -150,23 +154,63 @@ export interface PaymentHandles {
   wechat?: string | null;
 }
 
-/** Set the payment handles a member exposes so others can thank them. */
-export function setUserPaymentHandles(userId: string, handles: PaymentHandles): void {
+export interface UserProfileInput {
+  name: string;
+  wechat_nickname?: string | null;
+  contact?: string | null;
+  home_area?: string | null;
+  home_zip?: string | null;
+}
+
+export async function setUserProfile(
+  userId: string,
+  input: UserProfileInput
+): Promise<void> {
   const clean = (v: string | null | undefined) => {
     const s = (v ?? "").trim();
     return s.length > 0 ? s : null;
   };
-  getDb()
-    .prepare(
-      "UPDATE users SET pay_paypal = ?, pay_venmo = ?, pay_wechat = ? WHERE id = ?"
-    )
-    .run(clean(handles.paypal), clean(handles.venmo), clean(handles.wechat), userId);
+  await run(
+    `UPDATE users
+       SET name = $1,
+           wechat_nickname = $2,
+           contact = $3,
+           home_area = $4,
+           home_zip = $5
+       WHERE id = $6`,
+    [
+      input.name.trim(),
+      clean(input.wechat_nickname),
+      clean(input.contact),
+      clean(input.home_area),
+      clean(input.home_zip),
+      userId,
+    ]
+  );
 }
 
-export function setUserPasswordHash(userId: string, passwordHash: string): void {
-  getDb()
-    .prepare("UPDATE users SET password_hash = ? WHERE id = ?")
-    .run(passwordHash, userId);
+/** Set the payment handles a member exposes so others can thank them. */
+export async function setUserPaymentHandles(
+  userId: string,
+  handles: PaymentHandles
+): Promise<void> {
+  const clean = (v: string | null | undefined) => {
+    const s = (v ?? "").trim();
+    return s.length > 0 ? s : null;
+  };
+  await run("UPDATE users SET pay_paypal = $1, pay_venmo = $2, pay_wechat = $3 WHERE id = $4", [
+    clean(handles.paypal),
+    clean(handles.venmo),
+    clean(handles.wechat),
+    userId,
+  ]);
+}
+
+export async function setUserPasswordHash(
+  userId: string,
+  passwordHash: string
+): Promise<void> {
+  await run("UPDATE users SET password_hash = $1 WHERE id = $2", [passwordHash, userId]);
 }
 
 export interface PasswordResetRequest {
@@ -175,140 +219,174 @@ export interface PasswordResetRequest {
 }
 
 /** Create a one-time password reset token. Store only a hash in the DB. */
-export function createPasswordResetToken(
+export async function createPasswordResetToken(
   email: string,
   ttlMinutes = 30
-): PasswordResetRequest | null {
-  const user = getUserByEmail(email);
+): Promise<PasswordResetRequest | null> {
+  const user = await getUserByEmail(email);
   if (!user) return null;
   const token = crypto.randomBytes(32).toString("base64url");
   const now = new Date();
   const expiresAt = new Date(now.getTime() + ttlMinutes * 60 * 1000).toISOString();
-  const db = getDb();
-  const tx = db.transaction(() => {
+  await withTransaction(async (tx) => {
     // Keep the latest request simple and prevent old unused tokens from piling up.
-    db.prepare(
-      "UPDATE password_reset_tokens SET used_at = ? WHERE user_id = ? AND used_at IS NULL"
-    ).run(now.toISOString(), user.id);
-    db.prepare(
+    await tx.run(
+      "UPDATE password_reset_tokens SET used_at = $1 WHERE user_id = $2 AND used_at IS NULL",
+      [now.toISOString(), user.id]
+    );
+    await tx.run(
       `INSERT INTO password_reset_tokens
          (id, user_id, token_hash, expires_at, used_at, created_at)
-       VALUES (?, ?, ?, ?, NULL, ?)`
-    ).run(newId(), user.id, sha256(token), expiresAt, now.toISOString());
+       VALUES ($1, $2, $3, $4, NULL, $5)`,
+      [newId(), user.id, sha256(token), expiresAt, now.toISOString()]
+    );
   });
-  tx();
   return { token, expires_at: expiresAt };
 }
 
 /** Consume a valid reset token and update the user's password hash atomically. */
-export function resetPasswordWithToken(token: string, passwordHash: string): boolean {
-  const db = getDb();
+export async function resetPasswordWithToken(
+  token: string,
+  passwordHash: string
+): Promise<boolean> {
   const tokenHash = sha256(token);
   const now = new Date().toISOString();
-  const tx = db.transaction(() => {
-    const row = db
-      .prepare(
-        `SELECT id, user_id
+  return withTransaction(async (tx) => {
+    const row = await tx.one<{ id: string; user_id: string }>(
+      `SELECT id, user_id
          FROM password_reset_tokens
-         WHERE token_hash = ?
+         WHERE token_hash = $1
            AND used_at IS NULL
-           AND expires_at > ?`
-      )
-      .get(tokenHash, now) as { id: string; user_id: string } | undefined;
+           AND expires_at > $2`,
+      [tokenHash, now]
+    );
     if (!row) return false;
-    db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(
+    await tx.run("UPDATE users SET password_hash = $1 WHERE id = $2", [
       passwordHash,
-      row.user_id
-    );
-    db.prepare("UPDATE password_reset_tokens SET used_at = ? WHERE id = ?").run(
+      row.user_id,
+    ]);
+    await tx.run("UPDATE password_reset_tokens SET used_at = $1 WHERE id = $2", [
       now,
-      row.id
-    );
+      row.id,
+    ]);
     return true;
   });
-  return tx();
 }
 
 // ---------------------------------------------------------------------------
 // Groups & memberships
 // ---------------------------------------------------------------------------
 
-export function createGroup(
+export async function createGroup(
   name: string,
   type: string | null,
   policy: string | null = null
-): Group {
-  const db = getDb();
+): Promise<Group> {
   const id = newId();
   let code = newInviteCode();
   // Avoid the (astronomically unlikely) collision.
-  while (getGroupByInviteCode(code)) code = newInviteCode();
-  db.prepare(
-    `INSERT INTO groups (id, name, type, policy, invite_code, created_at) VALUES (?, ?, ?, ?, ?, ?)`
-  ).run(id, name.trim(), type, policy, code, nowIso());
-  return getGroupById(id)!;
+  while (await getGroupByInviteCode(code)) code = newInviteCode();
+  await run(
+    `INSERT INTO groups (id, name, type, policy, invite_code, created_at) VALUES ($1, $2, $3, $4, $5, $6)`,
+    [id, name.trim(), type, policy, code, nowIso()]
+  );
+  return (await getGroupById(id))!;
 }
 
 /** Only a club admin should call this (enforced in the action layer). */
-export function setGroupPolicy(groupId: string, policy: string | null): void {
-  getDb().prepare("UPDATE groups SET policy = ? WHERE id = ?").run(policy, groupId);
+export async function setGroupPolicy(
+  groupId: string,
+  policy: string | null
+): Promise<void> {
+  await run("UPDATE groups SET policy = $1 WHERE id = $2", [policy, groupId]);
 }
 
-export function getGroupMemberIds(groupId: string): string[] {
-  return (
-    getDb()
-      .prepare("SELECT user_id FROM memberships WHERE group_id = ?")
-      .all(groupId) as { user_id: string }[]
-  ).map((r) => r.user_id);
+export async function closeGroup(groupId: string): Promise<void> {
+  await run("DELETE FROM groups WHERE id = $1", [groupId]);
 }
 
-export function getGroupById(id: string): Group | undefined {
-  return getDb().prepare("SELECT * FROM groups WHERE id = ?").get(id) as
-    Group | undefined;
+export async function getGroupMemberIds(groupId: string): Promise<string[]> {
+  const rows = await sql<{ user_id: string }>(
+    "SELECT user_id FROM memberships WHERE group_id = $1",
+    [groupId]
+  );
+  return rows.map((r) => r.user_id);
 }
 
-export function getGroupByInviteCode(code: string): Group | undefined {
-  return getDb()
-    .prepare("SELECT * FROM groups WHERE invite_code = ?")
-    .get(code.toUpperCase().trim()) as Group | undefined;
+export async function getGroupById(id: string): Promise<Group | undefined> {
+  return one<Group>("SELECT * FROM groups WHERE id = $1", [id]);
 }
 
-export function getMembership(userId: string, groupId: string): Membership | undefined {
-  return getDb()
-    .prepare("SELECT * FROM memberships WHERE user_id = ? AND group_id = ?")
-    .get(userId, groupId) as Membership | undefined;
+export async function getGroupByInviteCode(code: string): Promise<Group | undefined> {
+  return one<Group>("SELECT * FROM groups WHERE invite_code = $1", [
+    code.toUpperCase().trim(),
+  ]);
 }
 
-export function addMembership(
+export async function getMembership(
+  userId: string,
+  groupId: string
+): Promise<Membership | undefined> {
+  return one<Membership>(
+    "SELECT * FROM memberships WHERE user_id = $1 AND group_id = $2",
+    [userId, groupId]
+  );
+}
+
+export async function addMembership(
   userId: string,
   groupId: string,
   role: MembershipRole = "member",
   policyAcceptedAt: string | null = null
-): Membership {
-  const db = getDb();
-  const existing = getMembership(userId, groupId);
+): Promise<Membership> {
+  const existing = await getMembership(userId, groupId);
   if (existing) return existing;
   const id = newId();
-  db.prepare(
+  await run(
     `INSERT INTO memberships (id, user_id, group_id, role, policy_accepted_at, created_at)
-     VALUES (?, ?, ?, ?, ?, ?)`
-  ).run(id, userId, groupId, role, policyAcceptedAt, nowIso());
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [id, userId, groupId, role, policyAcceptedAt, nowIso()]
+  );
   // Every new member starts with initial credits so they can borrow right away.
-  grantInitialCredits(userId, groupId);
-  return getMembership(userId, groupId)!;
+  await grantInitialCredits(userId, groupId);
+  return (await getMembership(userId, groupId))!;
 }
 
-export function getGroupsForUser(userId: string): GroupWithRole[] {
-  return getDb()
-    .prepare(
-      `SELECT g.*, m.role AS role,
-              (SELECT COUNT(*) FROM memberships m2 WHERE m2.group_id = g.id) AS member_count
+export async function isLastGroupAdmin(
+  userId: string,
+  groupId: string
+): Promise<boolean> {
+  const membership = await getMembership(userId, groupId);
+  if (membership?.role !== "admin") return false;
+  const row = await one<{ admin_count: number; member_count: number }>(
+    `SELECT
+         SUM(CASE WHEN role = 'admin' THEN 1 ELSE 0 END)::int AS admin_count,
+         COUNT(*)::int AS member_count
+       FROM memberships
+       WHERE group_id = $1`,
+    [groupId]
+  );
+  if (!row) return false;
+  return row.member_count > 1 && row.admin_count <= 1;
+}
+
+export async function removeMembership(userId: string, groupId: string): Promise<void> {
+  await run("DELETE FROM memberships WHERE user_id = $1 AND group_id = $2", [
+    userId,
+    groupId,
+  ]);
+}
+
+export async function getGroupsForUser(userId: string): Promise<GroupWithRole[]> {
+  return sql<GroupWithRole>(
+    `SELECT g.*, m.role AS role,
+              (SELECT COUNT(*) FROM memberships m2 WHERE m2.group_id = g.id)::int AS member_count
        FROM groups g
        JOIN memberships m ON m.group_id = g.id
-       WHERE m.user_id = ?
-       ORDER BY g.created_at ASC`
-    )
-    .all(userId) as GroupWithRole[];
+       WHERE m.user_id = $1
+       ORDER BY g.created_at ASC`,
+    [userId]
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -334,46 +412,47 @@ export interface CreateBookInput {
   visible_to_others?: boolean;
 }
 
-export function createBook(input: CreateBookInput): Book {
-  const db = getDb();
+export async function createBook(input: CreateBookInput): Promise<Book> {
   const id = newId();
   const at = nowIso();
-  db.prepare(
-    `INSERT INTO books (
-       id, group_id, owner_user_id, isbn, share_mode, title, author, language, cover_image_url,
-       age_range, category, condition, notes, deposit,
-       current_holder_user_id, current_location_area, location_zip, requested_by_user_id,
-       status, visible_to_others, created_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'available', ?, ?)`
-  ).run(
-    id,
-    input.group_id,
-    input.owner_user_id,
-    input.isbn ?? null,
-    input.share_mode === "lend" ? "lend" : "flow",
-    input.title.trim(),
-    input.author ?? null,
-    input.language ?? null,
-    input.cover_image_url ?? null,
-    input.age_range ?? null,
-    input.category ?? null,
-    input.condition ?? null,
-    input.notes ?? null,
-    input.deposit ?? null,
-    input.owner_user_id,
-    input.current_location_area ?? null,
-    input.location_zip ?? null,
-    input.share_mode === "lend" && input.visible_to_others === false ? 0 : 1,
-    at
-  );
-  // The owner is the first holder; open a holding so history starts with them.
-  openHolding(db, id, input.owner_user_id, at);
-  return getDb().prepare("SELECT * FROM books WHERE id = ?").get(id) as Book;
+  await withTransaction(async (tx) => {
+    await tx.run(
+      `INSERT INTO books (
+         id, group_id, owner_user_id, isbn, share_mode, title, author, language, cover_image_url,
+         age_range, category, condition, notes, deposit,
+         current_holder_user_id, current_location_area, location_zip, requested_by_user_id,
+         status, visible_to_others, created_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NULL, 'available', $18, $19)`,
+      [
+        id,
+        input.group_id,
+        input.owner_user_id,
+        input.isbn ?? null,
+        input.share_mode === "lend" ? "lend" : "flow",
+        input.title.trim(),
+        input.author ?? null,
+        input.language ?? null,
+        input.cover_image_url ?? null,
+        input.age_range ?? null,
+        input.category ?? null,
+        input.condition ?? null,
+        input.notes ?? null,
+        input.deposit ?? null,
+        input.owner_user_id,
+        input.current_location_area ?? null,
+        input.location_zip ?? null,
+        input.share_mode === "lend" && input.visible_to_others === false ? 0 : 1,
+        at,
+      ]
+    );
+    // The owner is the first holder; open a holding so history starts with them.
+    await openHolding(tx, id, input.owner_user_id, at);
+  });
+  return (await one<Book>("SELECT * FROM books WHERE id = $1", [id]))!;
 }
 
-export function getBookById(id: string): BookWithPeople | undefined {
-  return getDb().prepare(`${BOOK_SELECT} WHERE b.id = ?`).get(id) as
-    BookWithPeople | undefined;
+export async function getBookById(id: string): Promise<BookWithPeople | undefined> {
+  return one<BookWithPeople>(`${BOOK_SELECT} WHERE b.id = $1`, [id]);
 }
 
 export interface BookFilters {
@@ -385,117 +464,182 @@ export interface BookFilters {
   viewerUserId?: string;
 }
 
-export function listBooks(
+export async function listBooks(
   groupId: string,
   filters: BookFilters = {}
-): BookWithPeople[] {
-  const clauses: string[] = ["b.group_id = ?"];
-  const params: unknown[] = [groupId];
+): Promise<BookWithPeople[]> {
+  const params: unknown[] = [];
+  const clauses: string[] = [];
+  params.push(groupId);
+  clauses.push(`b.group_id = $${params.length}`);
+
   if (filters.viewerUserId) {
-    clauses.push(
-      "(b.share_mode <> 'lend' OR b.visible_to_others = 1 OR b.owner_user_id = ?)"
-    );
     params.push(filters.viewerUserId);
+    clauses.push(
+      `(b.share_mode <> 'lend' OR b.visible_to_others = 1 OR b.owner_user_id = $${params.length})`
+    );
   } else {
     clauses.push("(b.share_mode <> 'lend' OR b.visible_to_others = 1)");
   }
 
   if (filters.search) {
-    clauses.push("(b.title LIKE ? OR b.author LIKE ?)");
     const like = `%${filters.search.trim()}%`;
-    params.push(like, like);
+    params.push(like);
+    const p1 = params.length;
+    params.push(like);
+    const p2 = params.length;
+    clauses.push(`(b.title ILIKE $${p1} OR b.author ILIKE $${p2})`);
   }
   if (filters.language) {
-    clauses.push("b.language = ?");
     params.push(filters.language);
+    clauses.push(`b.language = $${params.length}`);
   }
   if (filters.age_range) {
-    clauses.push("b.age_range = ?");
     params.push(filters.age_range);
+    clauses.push(`b.age_range = $${params.length}`);
   }
   if (filters.status) {
-    clauses.push("b.status = ?");
     params.push(filters.status);
+    clauses.push(`b.status = $${params.length}`);
   }
   if (filters.area) {
-    clauses.push("b.current_location_area = ?");
     params.push(filters.area);
+    clauses.push(`b.current_location_area = $${params.length}`);
   }
 
-  const sql = `${BOOK_SELECT} WHERE ${clauses.join(
+  const sqlText = `${BOOK_SELECT} WHERE ${clauses.join(
     " AND "
   )} ORDER BY b.created_at DESC`;
-  return getDb()
-    .prepare(sql)
-    .all(...params) as BookWithPeople[];
+  return sql<BookWithPeople>(sqlText, params);
 }
 
 /** Distinct values for building filter dropdowns. */
-export function getBookFacets(
+export async function getBookFacets(
   groupId: string,
   viewerUserId?: string
-): {
+): Promise<{
   languages: string[];
   ageRanges: string[];
   areas: string[];
-} {
-  const db = getDb();
+}> {
+  const params = viewerUserId ? [groupId, viewerUserId] : [groupId];
   const visibilityClause = viewerUserId
-    ? "AND (share_mode <> 'lend' OR visible_to_others = 1 OR owner_user_id = ?)"
+    ? "AND (share_mode <> 'lend' OR visible_to_others = 1 OR owner_user_id = $2)"
     : "AND (share_mode <> 'lend' OR visible_to_others = 1)";
-  const col = (c: string) =>
+  const col = async (c: string) =>
     (
-      db
-        .prepare(
-          `SELECT DISTINCT ${c} AS v
+      await sql<{ v: string }>(
+        `SELECT DISTINCT ${c} AS v
            FROM books
-           WHERE group_id = ?
+           WHERE group_id = $1
              AND ${c} IS NOT NULL
              AND ${c} <> ''
              ${visibilityClause}
-           ORDER BY v`
-        )
-        .all(...(viewerUserId ? [groupId, viewerUserId] : [groupId])) as { v: string }[]
+           ORDER BY v`,
+        params
+      )
     ).map((r) => r.v);
   return {
-    languages: col("language"),
-    ageRanges: col("age_range"),
-    areas: col("current_location_area"),
+    languages: await col("language"),
+    ageRanges: await col("age_range"),
+    areas: await col("current_location_area"),
   };
 }
 
-export function setBookVisibleToOthers(
+export async function setBookVisibleToOthers(
   bookId: string,
   ownerUserId: string,
   visible: boolean
-): void {
-  getDb()
-    .prepare(
-      `UPDATE books
-       SET visible_to_others = ?
-       WHERE id = ?
-         AND owner_user_id = ?
-         AND share_mode = 'lend'`
-    )
-    .run(visible ? 1 : 0, bookId, ownerUserId);
+): Promise<void> {
+  await run(
+    `UPDATE books
+       SET visible_to_others = $1
+       WHERE id = $2
+         AND owner_user_id = $3
+         AND share_mode = 'lend'`,
+    [visible ? 1 : 0, bookId, ownerUserId]
+  );
+}
+
+export async function withdrawOwnedBooks(
+  ownerUserId: string,
+  groupId: string,
+  bookIds: string[]
+): Promise<number> {
+  const ids = [...new Set(bookIds.map((id) => id.trim()).filter(Boolean))];
+  if (ids.length === 0) return 0;
+
+  return withTransaction(async (tx) => {
+    let removed = 0;
+    for (const bookId of ids) {
+      removed += await tx.run(
+        "DELETE FROM books WHERE id = $1 AND owner_user_id = $2 AND group_id = $3",
+        [bookId, ownerUserId, groupId]
+      );
+    }
+    return removed;
+  });
+}
+
+export async function transferOwnedBooks(
+  ownerUserId: string,
+  sourceGroupId: string,
+  targetGroupId: string,
+  bookIds: string[]
+): Promise<number> {
+  const ids = [...new Set(bookIds.map((id) => id.trim()).filter(Boolean))];
+  if (ids.length === 0 || sourceGroupId === targetGroupId) return 0;
+
+  const at = nowIso();
+  return withTransaction(async (tx) => {
+    let moved = 0;
+    for (const bookId of ids) {
+      const book = await tx.one<{ id: string }>(
+        `SELECT id FROM books
+           WHERE id = $1
+             AND owner_user_id = $2
+             AND current_holder_user_id = $3
+             AND group_id = $4`,
+        [bookId, ownerUserId, ownerUserId, sourceGroupId]
+      );
+      if (!book) continue;
+
+      // Membership-specific interactions should not leak into the destination club.
+      await tx.run("DELETE FROM ratings WHERE book_id = $1", [bookId]);
+      await tx.run("DELETE FROM holdings WHERE book_id = $1", [bookId]);
+      await tx.run("DELETE FROM book_reviews WHERE book_id = $1", [bookId]);
+      await tx.run("UPDATE credit_events SET book_id = NULL WHERE book_id = $1", [bookId]);
+      await tx.run(
+        "UPDATE books SET group_id = $1, status = 'available' WHERE id = $2",
+        [targetGroupId, bookId]
+      );
+      await openHolding(tx, bookId, ownerUserId, at);
+      moved += 1;
+    }
+    return moved;
+  });
 }
 
 /** Books this user added (origin), regardless of who holds them now. */
-export function getOwnedBooks(userId: string, groupId: string): BookWithPeople[] {
-  return getDb()
-    .prepare(
-      `${BOOK_SELECT} WHERE b.owner_user_id = ? AND b.group_id = ? ORDER BY b.created_at DESC`
-    )
-    .all(userId, groupId) as BookWithPeople[];
+export async function getOwnedBooks(
+  userId: string,
+  groupId: string
+): Promise<BookWithPeople[]> {
+  return sql<BookWithPeople>(
+    `${BOOK_SELECT} WHERE b.owner_user_id = $1 AND b.group_id = $2 ORDER BY b.created_at DESC`,
+    [userId, groupId]
+  );
 }
 
 /** Books this user currently holds (the books physically with them now). */
-export function getHeldBooks(userId: string, groupId: string): BookWithPeople[] {
-  return getDb()
-    .prepare(
-      `${BOOK_SELECT} WHERE b.current_holder_user_id = ? AND b.group_id = ? ORDER BY b.created_at DESC`
-    )
-    .all(userId, groupId) as BookWithPeople[];
+export async function getHeldBooks(
+  userId: string,
+  groupId: string
+): Promise<BookWithPeople[]> {
+  return sql<BookWithPeople>(
+    `${BOOK_SELECT} WHERE b.current_holder_user_id = $1 AND b.group_id = $2 ORDER BY b.created_at DESC`,
+    [userId, groupId]
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -508,10 +652,8 @@ export function getHeldBooks(userId: string, groupId: string): BookWithPeople[] 
  * this to become the new current holder. The book's location follows the new
  * holder. Coordination (pickup, timing) happens directly between members.
  */
-export function claimBook(bookId: string, newHolderId: string): void {
-  const db = getDb();
-  const book = db.prepare("SELECT * FROM books WHERE id = ?").get(bookId) as
-    Book | undefined;
+export async function claimBook(bookId: string, newHolderId: string): Promise<void> {
+  const book = await one<Book>("SELECT * FROM books WHERE id = $1", [bookId]);
   if (!book) throw new Error("Book not found");
   if (book.current_holder_user_id === newHolderId)
     throw new Error("You already have this book");
@@ -522,30 +664,34 @@ export function claimBook(bookId: string, newHolderId: string): void {
   ) {
     throw new Error("This book is hidden by its owner");
   }
-  const holder = getUserById(newHolderId);
+  const holder = await getUserById(newHolderId);
   const at = nowIso();
-  const tx = db.transaction(() => {
-    closeOpenHolding(db, bookId, "passed_on", at);
-    openHolding(db, bookId, newHolderId, at);
-    db.prepare(
+  const cost =
+    newHolderId !== book.owner_user_id
+      ? await creditCostForBook(bookId, book.share_mode)
+      : 0;
+  await withTransaction(async (tx) => {
+    await closeOpenHolding(tx, bookId, "passed_on", at);
+    await openHolding(tx, bookId, newHolderId, at);
+    await tx.run(
       `UPDATE books SET
-         current_holder_user_id = ?,
-         current_location_area = ?,
-         location_zip = ?,
+         current_holder_user_id = $1,
+         current_location_area = $2,
+         location_zip = $3,
          status = 'reading'
-       WHERE id = ?`
-    ).run(
-      newHolderId,
-      holder?.home_area ?? book.current_location_area,
-      holder?.home_zip ?? book.location_zip,
-      bookId
+       WHERE id = $4`,
+      [
+        newHolderId,
+        holder?.home_area ?? book.current_location_area,
+        holder?.home_zip ?? book.location_zip,
+        bookId,
+      ]
     );
     // Credit ledger: taking someone else's book costs the taker and pays the
     // owner. Conserved (+ and - cancel), so colluders can't mint net credit.
     if (newHolderId !== book.owner_user_id) {
-      const cost = creditCostForBook(bookId, book.share_mode);
-      addCreditEvent(
-        db,
+      await addCreditEvent(
+        tx,
         book.group_id,
         newHolderId,
         -cost,
@@ -554,8 +700,8 @@ export function claimBook(bookId: string, newHolderId: string): void {
         book.owner_user_id,
         at
       );
-      addCreditEvent(
-        db,
+      await addCreditEvent(
+        tx,
         book.group_id,
         book.owner_user_id,
         cost,
@@ -566,7 +712,6 @@ export function claimBook(bookId: string, newHolderId: string): void {
       );
     }
   });
-  tx();
 }
 
 /**
@@ -574,92 +719,92 @@ export function claimBook(bookId: string, newHolderId: string): void {
  * its owner. The book and its location go back to the owner. Coordination of the
  * actual handoff happens directly between members.
  */
-export function returnToOwner(bookId: string, actorId: string): void {
-  const db = getDb();
-  const book = db.prepare("SELECT * FROM books WHERE id = ?").get(bookId) as
-    Book | undefined;
+export async function returnToOwner(bookId: string, actorId: string): Promise<void> {
+  const book = await one<Book>("SELECT * FROM books WHERE id = $1", [bookId]);
   if (!book) throw new Error("Book not found");
   if (book.current_holder_user_id !== actorId && book.owner_user_id !== actorId)
     throw new Error("Only the current holder or owner can mark it returned");
-  const owner = getUserById(book.owner_user_id);
+  const owner = await getUserById(book.owner_user_id);
   const at = nowIso();
-  const tx = db.transaction(() => {
-    closeOpenHolding(db, bookId, "returned", at);
-    openHolding(db, bookId, book.owner_user_id, at);
-    db.prepare(
+  await withTransaction(async (tx) => {
+    await closeOpenHolding(tx, bookId, "returned", at);
+    await openHolding(tx, bookId, book.owner_user_id, at);
+    await tx.run(
       `UPDATE books SET
-         current_holder_user_id = ?,
-         current_location_area = ?,
-         location_zip = ?,
+         current_holder_user_id = $1,
+         current_location_area = $2,
+         location_zip = $3,
          status = 'available'
-       WHERE id = ?`
-    ).run(
-      book.owner_user_id,
-      owner?.home_area ?? book.current_location_area,
-      owner?.home_zip ?? book.location_zip,
-      bookId
+       WHERE id = $4`,
+      [
+        book.owner_user_id,
+        owner?.home_area ?? book.current_location_area,
+        owner?.home_zip ?? book.location_zip,
+        bookId,
+      ]
     );
   });
-  tx();
 }
 
 /**
  * The current holder marks whether they're still reading the book or it's ready
  * to pass on to whoever wants it next. Purely informational.
  */
-export function setBookStatus(
+export async function setBookStatus(
   bookId: string,
   holderId: string,
   status: BookStatus
-): void {
-  const db = getDb();
-  const book = db.prepare("SELECT * FROM books WHERE id = ?").get(bookId) as
-    Book | undefined;
+): Promise<void> {
+  const book = await one<Book>("SELECT * FROM books WHERE id = $1", [bookId]);
   if (!book) throw new Error("Book not found");
   if (book.current_holder_user_id !== holderId)
     throw new Error("Only the current holder can change status");
-  db.prepare("UPDATE books SET status = ? WHERE id = ?").run(status, bookId);
+  await run("UPDATE books SET status = $1 WHERE id = $2", [status, bookId]);
 }
 
 // ---------------------------------------------------------------------------
 // Holdings (flow / borrow history) & ratings (member credit)
 // ---------------------------------------------------------------------------
 
-type DbHandle = ReturnType<typeof getDb>;
-
-function openHolding(db: DbHandle, bookId: string, holderId: string, at: string): void {
-  db.prepare(
+async function openHolding(
+  exec: Executor,
+  bookId: string,
+  holderId: string,
+  at: string
+): Promise<void> {
+  await exec.run(
     `INSERT INTO holdings (id, book_id, holder_user_id, started_at, ended_at, ended_reason)
-     VALUES (?, ?, ?, ?, NULL, NULL)`
-  ).run(newId(), bookId, holderId, at);
+     VALUES ($1, $2, $3, $4, NULL, NULL)`,
+    [newId(), bookId, holderId, at]
+  );
 }
 
-function closeOpenHolding(
-  db: DbHandle,
+async function closeOpenHolding(
+  exec: Executor,
   bookId: string,
   reason: string,
   at: string
-): void {
-  db.prepare(
-    `UPDATE holdings SET ended_at = ?, ended_reason = ?
-     WHERE book_id = ? AND ended_at IS NULL`
-  ).run(at, reason, bookId);
+): Promise<void> {
+  await exec.run(
+    `UPDATE holdings SET ended_at = $1, ended_reason = $2
+     WHERE book_id = $3 AND ended_at IS NULL`,
+    [at, reason, bookId]
+  );
 }
 
 /** A book's full chain of holders, newest first, with any rating attached. */
-export function getBookHoldings(bookId: string): BookHolding[] {
-  return getDb()
-    .prepare(
-      `SELECT h.id, h.book_id, h.holder_user_id, u.name AS holder_name,
+export async function getBookHoldings(bookId: string): Promise<BookHolding[]> {
+  return sql<BookHolding>(
+    `SELECT h.id, h.book_id, h.holder_user_id, u.name AS holder_name,
               h.started_at, h.ended_at, h.ended_reason,
               r.stars AS rating_stars, r.comment AS rating_comment
        FROM holdings h
        JOIN users u ON u.id = h.holder_user_id
        LEFT JOIN ratings r ON r.holding_id = h.id
-       WHERE h.book_id = ?
-       ORDER BY h.started_at DESC, h.rowid DESC`
-    )
-    .all(bookId) as BookHolding[];
+       WHERE h.book_id = $1
+       ORDER BY h.started_at DESC, h.id DESC`,
+    [bookId]
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -667,66 +812,61 @@ export function getBookHoldings(bookId: string): BookHolding[] {
 // ---------------------------------------------------------------------------
 
 /** Send the same notification to every member of a group except the actor. */
-export function notifyGroupMembers(
+export async function notifyGroupMembers(
   groupId: string,
   exceptUserId: string,
   type: string,
   body: string | null
-): void {
-  const db = getDb();
+): Promise<void> {
   const at = nowIso();
-  const insert = db.prepare(
-    `INSERT INTO notifications (id, user_id, group_id, type, body, read_at, created_at)
-     VALUES (?, ?, ?, ?, ?, NULL, ?)`
-  );
-  const tx = db.transaction((memberIds: string[]) => {
+  const memberIds = await getGroupMemberIds(groupId);
+  await withTransaction(async (tx) => {
     for (const memberId of memberIds) {
       if (memberId === exceptUserId) continue;
-      insert.run(newId(), memberId, groupId, type, body, at);
+      await tx.run(
+        `INSERT INTO notifications (id, user_id, group_id, type, body, read_at, created_at)
+         VALUES ($1, $2, $3, $4, $5, NULL, $6)`,
+        [newId(), memberId, groupId, type, body, at]
+      );
     }
   });
-  tx(getGroupMemberIds(groupId));
 }
 
-export function getNotifications(userId: string): NotificationItem[] {
-  return getDb()
-    .prepare(
-      `SELECT n.*, g.name AS group_name
+export async function getNotifications(userId: string): Promise<NotificationItem[]> {
+  return sql<NotificationItem>(
+    `SELECT n.*, g.name AS group_name
        FROM notifications n
        LEFT JOIN groups g ON g.id = n.group_id
-       WHERE n.user_id = ?
-       ORDER BY n.created_at DESC, n.rowid DESC
-       LIMIT 100`
-    )
-    .all(userId) as NotificationItem[];
+       WHERE n.user_id = $1
+       ORDER BY n.created_at DESC, n.id DESC
+       LIMIT 100`,
+    [userId]
+  );
 }
 
-export function getUnreadNotificationCount(userId: string): number {
-  const row = getDb()
-    .prepare(
-      "SELECT COUNT(*) AS count FROM notifications WHERE user_id = ? AND read_at IS NULL"
-    )
-    .get(userId) as { count: number };
-  return row.count;
+export async function getUnreadNotificationCount(userId: string): Promise<number> {
+  const row = await one<{ count: number }>(
+    "SELECT COUNT(*)::int AS count FROM notifications WHERE user_id = $1 AND read_at IS NULL",
+    [userId]
+  );
+  return row?.count ?? 0;
 }
 
-export function markNotificationsRead(userId: string): void {
-  getDb()
-    .prepare(
-      "UPDATE notifications SET read_at = ? WHERE user_id = ? AND read_at IS NULL"
-    )
-    .run(nowIso(), userId);
+export async function markNotificationsRead(userId: string): Promise<void> {
+  await run("UPDATE notifications SET read_at = $1 WHERE user_id = $2 AND read_at IS NULL", [
+    nowIso(),
+    userId,
+  ]);
 }
 
 /** Aggregate credit (average stars + count) a member has received. */
-export function getUserRating(userId: string): UserRating {
-  const row = getDb()
-    .prepare(
-      `SELECT AVG(stars) AS avg, COUNT(*) AS count
-       FROM ratings WHERE ratee_user_id = ?`
-    )
-    .get(userId) as { avg: number | null; count: number };
-  return { avg: row.avg, count: row.count };
+export async function getUserRating(userId: string): Promise<UserRating> {
+  const row = await one<{ avg: number | null; count: number }>(
+    `SELECT AVG(stars)::float AS avg, COUNT(*)::int AS count
+       FROM ratings WHERE ratee_user_id = $1`,
+    [userId]
+  );
+  return { avg: row?.avg ?? null, count: row?.count ?? 0 };
 }
 
 /**
@@ -734,19 +874,20 @@ export function getUserRating(userId: string): UserRating {
  * holding. Only the book's owner may rate, only completed borrows by someone
  * other than the owner, and only once per holding.
  */
-export function rateBorrower(
+export async function rateBorrower(
   holdingId: string,
   raterId: string,
   stars: number,
   comment: string | null
-): void {
-  const db = getDb();
-  const holding = db.prepare("SELECT * FROM holdings WHERE id = ?").get(holdingId) as
-    | { id: string; book_id: string; holder_user_id: string; ended_at: string | null }
-    | undefined;
+): Promise<void> {
+  const holding = await one<{
+    id: string;
+    book_id: string;
+    holder_user_id: string;
+    ended_at: string | null;
+  }>("SELECT * FROM holdings WHERE id = $1", [holdingId]);
   if (!holding) throw new Error("Holding not found");
-  const book = db.prepare("SELECT * FROM books WHERE id = ?").get(holding.book_id) as
-    Book | undefined;
+  const book = await one<Book>("SELECT * FROM books WHERE id = $1", [holding.book_id]);
   if (!book) throw new Error("Book not found");
   if (book.owner_user_id !== raterId)
     throw new Error("Only the owner can rate borrowers");
@@ -754,19 +895,12 @@ export function rateBorrower(
     throw new Error("Cannot rate the owner's own holding");
   if (!holding.ended_at) throw new Error("Can only rate a completed borrow");
   const clamped = Math.max(1, Math.min(5, Math.round(stars)));
-  db.prepare(
-    `INSERT OR IGNORE INTO ratings
+  await run(
+    `INSERT INTO ratings
        (id, holding_id, book_id, rater_user_id, ratee_user_id, stars, comment, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(
-    newId(),
-    holdingId,
-    book.id,
-    raterId,
-    holding.holder_user_id,
-    clamped,
-    comment,
-    nowIso()
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     ON CONFLICT (holding_id) DO NOTHING`,
+    [newId(), holdingId, book.id, raterId, holding.holder_user_id, clamped, comment, nowIso()]
   );
 }
 
@@ -775,15 +909,16 @@ export function rateBorrower(
 // ---------------------------------------------------------------------------
 
 /** All members of a group with their display names (for starting a DM, etc). */
-export function getGroupMembers(groupId: string): { id: string; name: string }[] {
-  return getDb()
-    .prepare(
-      `SELECT u.id, u.name
+export async function getGroupMembers(
+  groupId: string
+): Promise<{ id: string; name: string }[]> {
+  return sql<{ id: string; name: string }>(
+    `SELECT u.id, u.name
        FROM memberships m JOIN users u ON u.id = m.user_id
-       WHERE m.group_id = ?
-       ORDER BY u.name`
-    )
-    .all(groupId) as { id: string; name: string }[];
+       WHERE m.group_id = $1
+       ORDER BY u.name`,
+    [groupId]
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -800,6 +935,8 @@ export const INITIAL_CREDITS = 3;
  */
 export const LEND_COST = 1;
 export const FLOW_COST = 2;
+export const BOOK_REVIEW_CREDIT = 1;
+export const COMMUNITY_MESSAGE_DAILY_CREDIT = 1;
 
 /** Credit cost (and owner reward) for taking a book of the given share mode. */
 export function creditCostFor(mode: BookShareMode): number {
@@ -819,16 +956,20 @@ export function qualityBonus(avgStars: number | null): number {
 }
 
 /** Full credit cost for taking a specific book: share mode + quality bonus. */
-export function creditCostForBook(bookId: string, mode: BookShareMode): number {
-  return creditCostFor(mode) + qualityBonus(getBookReviewSummary(bookId).avg);
+export async function creditCostForBook(
+  bookId: string,
+  mode: BookShareMode
+): Promise<number> {
+  const summary = await getBookReviewSummary(bookId);
+  return creditCostFor(mode) + qualityBonus(summary.avg);
 }
 
 /** Score weights: sharing a book is worth more than it being taken once. */
 const SCORE_PER_SHARE = 3;
 const SCORE_PER_LEND = 2;
 
-function addCreditEvent(
-  db: ReturnType<typeof getDb>,
+async function addCreditEvent(
+  exec: Executor,
   groupId: string,
   userId: string,
   delta: number,
@@ -836,46 +977,96 @@ function addCreditEvent(
   bookId: string | null,
   counterpartyId: string | null,
   at: string
-): void {
-  db.prepare(
+): Promise<void> {
+  await exec.run(
     `INSERT INTO credit_events
        (id, group_id, user_id, delta, reason, book_id, counterparty_id, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(newId(), groupId, userId, delta, reason, bookId, counterpartyId, at);
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [newId(), groupId, userId, delta, reason, bookId, counterpartyId, at]
+  );
 }
 
 /** A member's spendable credit balance in a club (sum of ledger deltas). */
-export function getCreditBalance(userId: string, groupId: string): number {
-  const row = getDb()
-    .prepare(
-      "SELECT COALESCE(SUM(delta), 0) AS bal FROM credit_events WHERE user_id = ? AND group_id = ?"
-    )
-    .get(userId, groupId) as { bal: number };
-  return row.bal;
+export async function getCreditBalance(
+  userId: string,
+  groupId: string
+): Promise<number> {
+  const row = await one<{ bal: number }>(
+    "SELECT COALESCE(SUM(delta), 0)::int AS bal FROM credit_events WHERE user_id = $1 AND group_id = $2",
+    [userId, groupId]
+  );
+  return row?.bal ?? 0;
 }
 
 /** Full credit history for a member, newest first. */
-export function getCreditEvents(userId: string, groupId: string): CreditEvent[] {
-  return getDb()
-    .prepare(
-      "SELECT * FROM credit_events WHERE user_id = ? AND group_id = ? ORDER BY created_at DESC"
-    )
-    .all(userId, groupId) as CreditEvent[];
+export async function getCreditEvents(
+  userId: string,
+  groupId: string
+): Promise<CreditEvent[]> {
+  return sql<CreditEvent>(
+    "SELECT * FROM credit_events WHERE user_id = $1 AND group_id = $2 ORDER BY created_at DESC",
+    [userId, groupId]
+  );
 }
 
 /**
  * Grant the one-time initial credits when a member joins a club, so newcomers
  * can borrow right away. Idempotent: never grants a second 'starter' event.
  */
-export function grantInitialCredits(userId: string, groupId: string): void {
-  const db = getDb();
-  const already = db
-    .prepare(
-      "SELECT 1 FROM credit_events WHERE user_id = ? AND group_id = ? AND reason = 'starter' LIMIT 1"
-    )
-    .get(userId, groupId);
+export async function grantInitialCredits(
+  userId: string,
+  groupId: string
+): Promise<void> {
+  const already = await one(
+    "SELECT 1 FROM credit_events WHERE user_id = $1 AND group_id = $2 AND reason = 'starter' LIMIT 1",
+    [userId, groupId]
+  );
   if (already) return;
-  addCreditEvent(db, groupId, userId, INITIAL_CREDITS, "starter", null, null, nowIso());
+  await addCreditEvent(db, groupId, userId, INITIAL_CREDITS, "starter", null, null, nowIso());
+}
+
+async function grantBookReviewCreditIfFirst(
+  exec: Executor,
+  groupId: string,
+  userId: string,
+  bookId: string,
+  at: string
+): Promise<void> {
+  const already = await exec.one(
+    `SELECT 1 FROM credit_events
+       WHERE user_id = $1 AND group_id = $2 AND reason = 'review' AND book_id = $3
+       LIMIT 1`,
+    [userId, groupId, bookId]
+  );
+  if (already) return;
+  await addCreditEvent(exec, groupId, userId, BOOK_REVIEW_CREDIT, "review", bookId, null, at);
+}
+
+async function grantDailyCommunityCreditIfFirst(
+  exec: Executor,
+  groupId: string,
+  userId: string,
+  at: string
+): Promise<void> {
+  const day = at.slice(0, 10);
+  const already = await exec.one(
+    `SELECT 1 FROM credit_events
+       WHERE user_id = $1 AND group_id = $2 AND reason = 'community'
+         AND substr(created_at, 1, 10) = $3
+       LIMIT 1`,
+    [userId, groupId, day]
+  );
+  if (already) return;
+  await addCreditEvent(
+    exec,
+    groupId,
+    userId,
+    COMMUNITY_MESSAGE_DAILY_CREDIT,
+    "community",
+    null,
+    null,
+    at
+  );
 }
 
 function levelForScore(score: number): ContributionLevel {
@@ -891,56 +1082,51 @@ function toContribution(shared: number, lent: number): Contribution {
 }
 
 /** A member's standing in a club: books shared, times lent out, score, level. */
-export function getUserContribution(userId: string, groupId: string): Contribution {
-  const db = getDb();
-  const shared = (
-    db
-      .prepare(
-        "SELECT COUNT(*) AS c FROM books WHERE owner_user_id = ? AND group_id = ?"
-      )
-      .get(userId, groupId) as { c: number }
-  ).c;
-  const lent = (
-    db
-      .prepare(
-        `SELECT COUNT(*) AS c
+export async function getUserContribution(
+  userId: string,
+  groupId: string
+): Promise<Contribution> {
+  const sharedRow = await one<{ c: number }>(
+    "SELECT COUNT(*)::int AS c FROM books WHERE owner_user_id = $1 AND group_id = $2",
+    [userId, groupId]
+  );
+  const lentRow = await one<{ c: number }>(
+    `SELECT COUNT(*)::int AS c
          FROM holdings h JOIN books b ON b.id = h.book_id
-         WHERE b.owner_user_id = ? AND b.group_id = ? AND h.holder_user_id != ?`
-      )
-      .get(userId, groupId, userId) as { c: number }
-  ).c;
-  return toContribution(shared, lent);
+         WHERE b.owner_user_id = $1 AND b.group_id = $2 AND h.holder_user_id != $1`,
+    [userId, groupId]
+  );
+  return toContribution(sharedRow?.c ?? 0, lentRow?.c ?? 0);
 }
 
 /** True when the member has at least `cost` credit available. */
-export function canBorrow(
+export async function canBorrow(
   userId: string,
   groupId: string,
   cost: number = LEND_COST
-): boolean {
-  return getCreditBalance(userId, groupId) >= cost;
+): Promise<boolean> {
+  return (await getCreditBalance(userId, groupId)) >= cost;
 }
 
 /** All members ranked by contribution score (highest first). */
-export function getGroupLeaderboard(groupId: string): LeaderboardEntry[] {
-  const rows = getDb()
-    .prepare(
-      `SELECT u.id AS user_id, u.name,
-        (SELECT COUNT(*) FROM books b WHERE b.owner_user_id = u.id AND b.group_id = ?) AS shared,
-        (SELECT COUNT(*) FROM holdings h JOIN books b ON b.id = h.book_id
-           WHERE b.owner_user_id = u.id AND b.group_id = ? AND h.holder_user_id != u.id) AS lent,
-        (SELECT COALESCE(SUM(c.delta), 0) FROM credit_events c
-           WHERE c.user_id = u.id AND c.group_id = ?) AS balance
-       FROM memberships m JOIN users u ON u.id = m.user_id
-       WHERE m.group_id = ?`
-    )
-    .all(groupId, groupId, groupId, groupId) as {
+export async function getGroupLeaderboard(groupId: string): Promise<LeaderboardEntry[]> {
+  const rows = await sql<{
     user_id: string;
     name: string;
     shared: number;
     lent: number;
     balance: number;
-  }[];
+  }>(
+    `SELECT u.id AS user_id, u.name,
+        (SELECT COUNT(*) FROM books b WHERE b.owner_user_id = u.id AND b.group_id = $1)::int AS shared,
+        (SELECT COUNT(*) FROM holdings h JOIN books b ON b.id = h.book_id
+           WHERE b.owner_user_id = u.id AND b.group_id = $1 AND h.holder_user_id != u.id)::int AS lent,
+        (SELECT COALESCE(SUM(c.delta), 0) FROM credit_events c
+           WHERE c.user_id = u.id AND c.group_id = $1)::int AS balance
+       FROM memberships m JOIN users u ON u.id = m.user_id
+       WHERE m.group_id = $1`,
+    [groupId]
+  );
   return rows
     .map((r) => ({
       user_id: r.user_id,
@@ -955,70 +1141,85 @@ export function getGroupLeaderboard(groupId: string): LeaderboardEntry[] {
 // Book reviews (review the book's content)
 // ---------------------------------------------------------------------------
 
-export function addBookReview(
+export async function addBookReview(
   bookId: string,
   userId: string,
   stars: number | null,
   comment: string | null
-): void {
-  getDb()
-    .prepare(
+): Promise<void> {
+  const book = await one<{ group_id: string }>(
+    "SELECT group_id FROM books WHERE id = $1",
+    [bookId]
+  );
+  if (!book) throw new Error("Book not found");
+  const at = nowIso();
+  await withTransaction(async (tx) => {
+    await tx.run(
       `INSERT INTO book_reviews (id, book_id, user_id, stars, comment, created_at)
-       VALUES (?, ?, ?, ?, ?, ?)
-       ON CONFLICT(book_id, user_id) DO UPDATE SET
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (book_id, user_id) DO UPDATE SET
          stars = excluded.stars,
          comment = excluded.comment,
-         created_at = excluded.created_at`
-    )
-    .run(newId(), bookId, userId, stars, comment, nowIso());
+         created_at = excluded.created_at`,
+      [newId(), bookId, userId, stars, comment, at]
+    );
+    await grantBookReviewCreditIfFirst(tx, book.group_id, userId, bookId, at);
+  });
 }
 
-export function getBookReviews(bookId: string): BookReview[] {
-  return getDb()
-    .prepare(
-      `SELECT r.id, r.book_id, r.user_id, u.name AS user_name,
+export async function getBookReviews(bookId: string): Promise<BookReview[]> {
+  return sql<BookReview>(
+    `SELECT r.id, r.book_id, r.user_id, u.name AS user_name,
               r.stars, r.comment, r.created_at
        FROM book_reviews r JOIN users u ON u.id = r.user_id
-       WHERE r.book_id = ?
-       ORDER BY r.created_at DESC, r.rowid DESC`
-    )
-    .all(bookId) as BookReview[];
+       WHERE r.book_id = $1
+       ORDER BY r.created_at DESC, r.id DESC`,
+    [bookId]
+  );
 }
 
-export function getBookReviewSummary(bookId: string): UserRating {
-  const row = getDb()
-    .prepare(
-      `SELECT AVG(stars) AS avg, COUNT(*) AS count
-       FROM book_reviews WHERE book_id = ? AND stars IS NOT NULL`
-    )
-    .get(bookId) as { avg: number | null; count: number };
-  return { avg: row.avg, count: row.count };
+export async function getBookReviewSummary(bookId: string): Promise<UserRating> {
+  const row = await one<{ avg: number | null; count: number }>(
+    `SELECT AVG(stars)::float AS avg, COUNT(*)::int AS count
+       FROM book_reviews WHERE book_id = $1 AND stars IS NOT NULL`,
+    [bookId]
+  );
+  return { avg: row?.avg ?? null, count: row?.count ?? 0 };
 }
 
 // ---------------------------------------------------------------------------
 // Group chat
 // ---------------------------------------------------------------------------
 
-export function postGroupMessage(groupId: string, userId: string, body: string): void {
-  getDb()
-    .prepare(
+export async function postGroupMessage(
+  groupId: string,
+  userId: string,
+  body: string
+): Promise<void> {
+  const at = nowIso();
+  await withTransaction(async (tx) => {
+    await tx.run(
       `INSERT INTO group_messages (id, group_id, user_id, body, created_at)
-       VALUES (?, ?, ?, ?, ?)`
-    )
-    .run(newId(), groupId, userId, body, nowIso());
+       VALUES ($1, $2, $3, $4, $5)`,
+      [newId(), groupId, userId, body, at]
+    );
+    await grantDailyCommunityCreditIfFirst(tx, groupId, userId, at);
+  });
 }
 
 /** Recent group messages in chronological (oldest-first) order. */
-export function getGroupMessages(groupId: string, limit = 200): GroupMessage[] {
-  const rows = getDb()
-    .prepare(
-      `SELECT m.id, m.group_id, m.user_id, u.name AS user_name, m.body, m.created_at
+export async function getGroupMessages(
+  groupId: string,
+  limit = 200
+): Promise<GroupMessage[]> {
+  const rows = await sql<GroupMessage>(
+    `SELECT m.id, m.group_id, m.user_id, u.name AS user_name, m.body, m.created_at
        FROM group_messages m JOIN users u ON u.id = m.user_id
-       WHERE m.group_id = ?
-       ORDER BY m.created_at DESC, m.rowid DESC
-       LIMIT ?`
-    )
-    .all(groupId, limit) as GroupMessage[];
+       WHERE m.group_id = $1
+       ORDER BY m.created_at DESC, m.id DESC
+       LIMIT $2`,
+    [groupId, limit]
+  );
   return rows.reverse();
 }
 
@@ -1026,72 +1227,73 @@ export function getGroupMessages(groupId: string, limit = 200): GroupMessage[] {
 // Direct messages (1:1)
 // ---------------------------------------------------------------------------
 
-export function sendDirectMessage(
+export async function sendDirectMessage(
   senderId: string,
   recipientId: string,
   body: string
-): void {
-  getDb()
-    .prepare(
-      `INSERT INTO direct_messages
+): Promise<void> {
+  await run(
+    `INSERT INTO direct_messages
          (id, sender_user_id, recipient_user_id, body, read_at, created_at)
-       VALUES (?, ?, ?, ?, NULL, ?)`
-    )
-    .run(newId(), senderId, recipientId, body, nowIso());
+       VALUES ($1, $2, $3, $4, NULL, $5)`,
+    [newId(), senderId, recipientId, body, nowIso()]
+  );
 }
 
 /** The full 1:1 thread between two users, oldest-first. */
-export function getConversation(userA: string, userB: string): DirectMessage[] {
-  return getDb()
-    .prepare(
-      `SELECT * FROM direct_messages
-       WHERE (sender_user_id = ? AND recipient_user_id = ?)
-          OR (sender_user_id = ? AND recipient_user_id = ?)
-       ORDER BY created_at ASC, rowid ASC`
-    )
-    .all(userA, userB, userB, userA) as DirectMessage[];
+export async function getConversation(
+  userA: string,
+  userB: string
+): Promise<DirectMessage[]> {
+  return sql<DirectMessage>(
+    `SELECT * FROM direct_messages
+       WHERE (sender_user_id = $1 AND recipient_user_id = $2)
+          OR (sender_user_id = $2 AND recipient_user_id = $1)
+       ORDER BY created_at ASC, id ASC`,
+    [userA, userB]
+  );
 }
 
 /** One row per person the user has talked to, with last message + unread count. */
-export function getConversations(userId: string): DmConversation[] {
-  return getDb()
-    .prepare(
-      `WITH msgs AS (
+export async function getConversations(userId: string): Promise<DmConversation[]> {
+  return sql<DmConversation>(
+    `WITH msgs AS (
          SELECT
-           CASE WHEN sender_user_id = ? THEN recipient_user_id ELSE sender_user_id END AS other_id,
+           CASE WHEN sender_user_id = $1 THEN recipient_user_id ELSE sender_user_id END AS other_id,
            body, created_at, read_at, recipient_user_id
          FROM direct_messages
-         WHERE sender_user_id = ? OR recipient_user_id = ?
+         WHERE sender_user_id = $1 OR recipient_user_id = $1
        )
        SELECT
          msgs.other_id AS user_id,
          u.name AS user_name,
          (SELECT body FROM msgs m2 WHERE m2.other_id = msgs.other_id ORDER BY m2.created_at DESC LIMIT 1) AS last_body,
          MAX(msgs.created_at) AS last_at,
-         SUM(CASE WHEN msgs.recipient_user_id = ? AND msgs.read_at IS NULL THEN 1 ELSE 0 END) AS unread
+         SUM(CASE WHEN msgs.recipient_user_id = $1 AND msgs.read_at IS NULL THEN 1 ELSE 0 END)::int AS unread
        FROM msgs JOIN users u ON u.id = msgs.other_id
-       GROUP BY msgs.other_id
-       ORDER BY last_at DESC`
-    )
-    .all(userId, userId, userId, userId) as DmConversation[];
+       GROUP BY msgs.other_id, u.name
+       ORDER BY last_at DESC`,
+    [userId]
+  );
 }
 
-export function markConversationRead(userId: string, otherId: string): void {
-  getDb()
-    .prepare(
-      `UPDATE direct_messages SET read_at = ?
-       WHERE recipient_user_id = ? AND sender_user_id = ? AND read_at IS NULL`
-    )
-    .run(nowIso(), userId, otherId);
+export async function markConversationRead(
+  userId: string,
+  otherId: string
+): Promise<void> {
+  await run(
+    `UPDATE direct_messages SET read_at = $1
+       WHERE recipient_user_id = $2 AND sender_user_id = $3 AND read_at IS NULL`,
+    [nowIso(), userId, otherId]
+  );
 }
 
-export function getUnreadDmCount(userId: string): number {
-  const row = getDb()
-    .prepare(
-      "SELECT COUNT(*) AS count FROM direct_messages WHERE recipient_user_id = ? AND read_at IS NULL"
-    )
-    .get(userId) as { count: number };
-  return row.count;
+export async function getUnreadDmCount(userId: string): Promise<number> {
+  const row = await one<{ count: number }>(
+    "SELECT COUNT(*)::int AS count FROM direct_messages WHERE recipient_user_id = $1 AND read_at IS NULL",
+    [userId]
+  );
+  return row?.count ?? 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -1107,15 +1309,13 @@ export interface CreateRequestInput {
   note?: string | null;
 }
 
-export function createBookRequest(input: CreateRequestInput): string {
+export async function createBookRequest(input: CreateRequestInput): Promise<string> {
   const id = newId();
-  getDb()
-    .prepare(
-      `INSERT INTO book_requests
+  await run(
+    `INSERT INTO book_requests
          (id, group_id, requester_user_id, title, author, isbn, note, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?)`
-    )
-    .run(
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'open', $8)`,
+    [
       id,
       input.group_id,
       input.requester_user_id,
@@ -1123,137 +1323,179 @@ export function createBookRequest(input: CreateRequestInput): string {
       input.author ?? null,
       input.isbn ?? null,
       input.note ?? null,
-      nowIso()
-    );
+      nowIso(),
+    ]
+  );
   return id;
 }
 
-export function listBookRequests(groupId: string, viewerId: string): BookRequest[] {
-  return getDb()
-    .prepare(
-      `SELECT b.id, b.group_id, b.requester_user_id, u.name AS requester_name,
+export async function listBookRequests(
+  groupId: string,
+  viewerId: string
+): Promise<BookRequest[]> {
+  return sql<BookRequest>(
+    `SELECT b.id, b.group_id, b.requester_user_id, u.name AS requester_name,
               b.title, b.author, b.isbn, b.note, b.status, b.created_at,
-              (SELECT COUNT(*) FROM request_interests ri WHERE ri.request_id = b.id AND ri.kind = 'want') AS want_count,
-              (SELECT COUNT(*) FROM request_interests ri WHERE ri.request_id = b.id AND ri.kind = 'buy') AS buy_count,
-              (SELECT COUNT(*) FROM request_interests ri WHERE ri.request_id = b.id AND ri.kind = 'want' AND ri.user_id = ?) AS viewer_want,
-              (SELECT COUNT(*) FROM request_interests ri WHERE ri.request_id = b.id AND ri.kind = 'buy' AND ri.user_id = ?) AS viewer_buy
+              (SELECT COUNT(*) FROM request_interests ri WHERE ri.request_id = b.id AND ri.kind = 'want')::int AS want_count,
+              (SELECT COUNT(*) FROM request_interests ri WHERE ri.request_id = b.id AND ri.kind = 'buy')::int AS buy_count,
+              (SELECT COUNT(*) FROM request_interests ri WHERE ri.request_id = b.id AND ri.kind = 'want' AND ri.user_id = $1)::int AS viewer_want,
+              (SELECT COUNT(*) FROM request_interests ri WHERE ri.request_id = b.id AND ri.kind = 'buy' AND ri.user_id = $1)::int AS viewer_buy
        FROM book_requests b JOIN users u ON u.id = b.requester_user_id
-       WHERE b.group_id = ?
-       ORDER BY (b.status = 'open') DESC, b.created_at DESC`
-    )
-    .all(viewerId, viewerId, groupId) as BookRequest[];
+       WHERE b.group_id = $2
+       ORDER BY (b.status = 'open') DESC, b.created_at DESC`,
+    [viewerId, groupId]
+  );
 }
 
-export function getBookRequest(id: string): BookRequest | undefined {
-  const db = getDb();
-  const row = db.prepare("SELECT group_id FROM book_requests WHERE id = ?").get(id) as
-    { group_id: string } | undefined;
+export async function getBookRequest(id: string): Promise<BookRequest | undefined> {
+  const row = await one<{ group_id: string }>(
+    "SELECT group_id FROM book_requests WHERE id = $1",
+    [id]
+  );
   if (!row) return undefined;
-  return listBookRequests(row.group_id, "").find((r) => r.id === id);
+  return (await listBookRequests(row.group_id, "")).find((r) => r.id === id);
 }
 
 /** Toggle a member's interest (want/buy) on a request. */
-export function toggleRequestInterest(
+export async function toggleRequestInterest(
   requestId: string,
   userId: string,
   kind: "want" | "buy"
-): void {
-  const db = getDb();
-  const existing = db
-    .prepare(
-      "SELECT id FROM request_interests WHERE request_id = ? AND user_id = ? AND kind = ?"
-    )
-    .get(requestId, userId, kind) as { id: string } | undefined;
+): Promise<void> {
+  const existing = await one<{ id: string }>(
+    "SELECT id FROM request_interests WHERE request_id = $1 AND user_id = $2 AND kind = $3",
+    [requestId, userId, kind]
+  );
   if (existing) {
-    db.prepare("DELETE FROM request_interests WHERE id = ?").run(existing.id);
+    await run("DELETE FROM request_interests WHERE id = $1", [existing.id]);
   } else {
-    db.prepare(
-      `INSERT OR IGNORE INTO request_interests (id, request_id, user_id, kind, created_at)
-       VALUES (?, ?, ?, ?, ?)`
-    ).run(newId(), requestId, userId, kind, nowIso());
+    await run(
+      `INSERT INTO request_interests (id, request_id, user_id, kind, created_at)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (request_id, user_id, kind) DO NOTHING`,
+      [newId(), requestId, userId, kind, nowIso()]
+    );
   }
 }
 
-export function setRequestStatus(
+export async function setRequestStatus(
   requestId: string,
   actorId: string,
   status: "open" | "fulfilled"
-): void {
-  const db = getDb();
-  const req = db
-    .prepare("SELECT requester_user_id FROM book_requests WHERE id = ?")
-    .get(requestId) as { requester_user_id: string } | undefined;
+): Promise<void> {
+  const req = await one<{ requester_user_id: string }>(
+    "SELECT requester_user_id FROM book_requests WHERE id = $1",
+    [requestId]
+  );
   if (!req) throw new Error("Request not found");
   if (req.requester_user_id !== actorId)
     throw new Error("Only the requester can change status");
-  db.prepare("UPDATE book_requests SET status = ? WHERE id = ?").run(status, requestId);
+  await run("UPDATE book_requests SET status = $1 WHERE id = $2", [status, requestId]);
 }
 
 // ---------------------------------------------------------------------------
 // Recommended book lists
 // ---------------------------------------------------------------------------
 
-export function createBookList(
+export async function createBookList(
   groupId: string,
   authorId: string,
   title: string,
   description: string | null
-): string {
+): Promise<string> {
   const id = newId();
-  getDb()
-    .prepare(
-      `INSERT INTO book_lists (id, group_id, author_user_id, title, description, created_at)
-       VALUES (?, ?, ?, ?, ?, ?)`
-    )
-    .run(id, groupId, authorId, title.trim(), description, nowIso());
+  await run(
+    `INSERT INTO book_lists (id, group_id, author_user_id, title, description, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+    [id, groupId, authorId, title.trim(), description, nowIso()]
+  );
   return id;
 }
 
-export function addBookListItem(
+export async function addBookListItem(
   listId: string,
   title: string,
   author: string | null,
   isbn: string | null,
   note: string | null
-): void {
-  getDb()
-    .prepare(
-      `INSERT INTO book_list_items (id, list_id, title, author, isbn, note, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    )
-    .run(newId(), listId, title.trim(), author, isbn, note, nowIso());
+): Promise<void> {
+  await run(
+    `INSERT INTO book_list_items (id, list_id, title, author, isbn, note, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [newId(), listId, title.trim(), author, isbn, note, nowIso()]
+  );
 }
 
-export function listBookLists(groupId: string): BookList[] {
-  return getDb()
-    .prepare(
-      `SELECT l.id, l.group_id, l.author_user_id, u.name AS author_name,
+export async function listBookLists(groupId: string): Promise<BookList[]> {
+  return sql<BookList>(
+    `SELECT l.id, l.group_id, l.author_user_id, u.name AS author_name,
               l.title, l.description, l.created_at,
-              (SELECT COUNT(*) FROM book_list_items i WHERE i.list_id = l.id) AS item_count
+              (SELECT COUNT(*) FROM book_list_items i WHERE i.list_id = l.id)::int AS item_count
        FROM book_lists l JOIN users u ON u.id = l.author_user_id
-       WHERE l.group_id = ?
-       ORDER BY l.created_at DESC`
-    )
-    .all(groupId) as BookList[];
+       WHERE l.group_id = $1
+       ORDER BY l.created_at DESC`,
+    [groupId]
+  );
 }
 
-export function getBookList(id: string): BookList | undefined {
-  return getDb()
-    .prepare(
-      `SELECT l.id, l.group_id, l.author_user_id, u.name AS author_name,
+export async function getBookList(id: string): Promise<BookList | undefined> {
+  return one<BookList>(
+    `SELECT l.id, l.group_id, l.author_user_id, u.name AS author_name,
               l.title, l.description, l.created_at,
-              (SELECT COUNT(*) FROM book_list_items i WHERE i.list_id = l.id) AS item_count
+              (SELECT COUNT(*) FROM book_list_items i WHERE i.list_id = l.id)::int AS item_count
        FROM book_lists l JOIN users u ON u.id = l.author_user_id
-       WHERE l.id = ?`
-    )
-    .get(id) as BookList | undefined;
+       WHERE l.id = $1`,
+    [id]
+  );
 }
 
-export function getBookListItems(listId: string): BookListItem[] {
-  return getDb()
-    .prepare(
-      `SELECT * FROM book_list_items WHERE list_id = ?
-       ORDER BY created_at ASC, rowid ASC`
-    )
-    .all(listId) as BookListItem[];
+export async function getBookListItems(listId: string): Promise<BookListItem[]> {
+  return sql<BookListItem>(
+    `SELECT * FROM book_list_items WHERE list_id = $1
+       ORDER BY created_at ASC, id ASC`,
+    [listId]
+  );
+}
+
+// ---------------------------------------------------------------------------
+// AI usage (free-tier daily request budget)
+// ---------------------------------------------------------------------------
+
+/** Local calendar day key (YYYY-MM-DD) used to bucket AI usage. */
+function aiUsageDay(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/** Number of external AI requests already made today. */
+export async function getAiUsageToday(): Promise<number> {
+  const row = await one<{ count: number }>(
+    "SELECT count FROM ai_usage WHERE day = $1",
+    [aiUsageDay()]
+  );
+  return row?.count ?? 0;
+}
+
+/** Record one external AI request and return the new running total for today. */
+export async function incrementAiUsage(): Promise<number> {
+  const day = aiUsageDay();
+  await run(
+    `INSERT INTO ai_usage (day, count) VALUES ($1, 1)
+       ON CONFLICT (day) DO UPDATE SET count = ai_usage.count + 1`,
+    [day]
+  );
+  return getAiUsageToday();
+}
+
+/** Force today's usage to (at least) the given limit, e.g. after a 429. */
+export async function markAiExhausted(limit: number): Promise<void> {
+  const day = aiUsageDay();
+  await run(
+    `INSERT INTO ai_usage (day, count) VALUES ($1, $2)
+       ON CONFLICT (day) DO UPDATE SET count = GREATEST(ai_usage.count, excluded.count)`,
+    [day, limit]
+  );
 }

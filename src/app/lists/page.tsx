@@ -13,7 +13,7 @@ export default async function ListsPage() {
   if (!user) redirect("/login?next=/lists");
   if (!activeGroup) redirect("/groups");
 
-  const lists = listBookLists(activeGroup.id);
+  const lists = await listBookLists(activeGroup.id);
 
   return (
     <div className="space-y-5">

@@ -140,7 +140,7 @@ export interface LeaderboardEntry extends Contribution {
   balance: number;
 }
 
-export type CreditReason = "starter" | "lend" | "borrow";
+export type CreditReason = "starter" | "lend" | "borrow" | "review" | "community";
 
 /** One immutable entry in the "lend to borrow" credit ledger. */
 export interface CreditEvent {

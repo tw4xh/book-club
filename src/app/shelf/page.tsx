@@ -3,20 +3,35 @@ import { redirect } from "next/navigation";
 import { createTranslator, getLocale, type Translator } from "@/lib/i18n";
 import { getSessionContext } from "@/lib/context";
 import { getHeldBooks, getOwnedBooks } from "@/lib/repo";
-import { returnToOwnerAction, setStatusAction } from "@/app/actions";
+import {
+  returnToOwnerAction,
+  setStatusAction,
+  transferOwnedBooksAction,
+  withdrawOwnedBooksAction,
+} from "@/app/actions";
 import { StatusBadge } from "@/components/StatusBadge";
 import type { BookWithPeople } from "@/lib/types";
 
-export default async function ShelfPage() {
+export default async function ShelfPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const locale = await getLocale();
   const t = createTranslator(locale);
-  const { user, activeGroup } = await getSessionContext();
+  const sp = await searchParams;
+  const { user, groups, activeGroup } = await getSessionContext();
 
   if (!user) redirect("/login?next=/shelf");
   if (!activeGroup) redirect("/groups");
 
-  const held = getHeldBooks(user.id, activeGroup.id);
-  const owned = getOwnedBooks(user.id, activeGroup.id);
+  const held = await getHeldBooks(user.id, activeGroup.id);
+  const owned = await getOwnedBooks(user.id, activeGroup.id);
+  const targetGroups = groups.filter((group) => group.id !== activeGroup.id);
+  const withdrawnRaw = typeof sp.withdrawn === "string" ? sp.withdrawn : null;
+  const withdrawnCount = withdrawnRaw ? Number.parseInt(withdrawnRaw, 10) : null;
+  const transferredRaw = typeof sp.transferred === "string" ? sp.transferred : null;
+  const transferredCount = transferredRaw ? Number.parseInt(transferredRaw, 10) : null;
 
   return (
     <div className="space-y-6">
@@ -46,6 +61,32 @@ export default async function ShelfPage() {
           {t("shelf.owned")}
           <span className="chip bg-stone-100 text-stone-500">{owned.length}</span>
         </h2>
+        {withdrawnCount != null ? (
+          <p
+            className={`mb-3 rounded-xl px-3 py-2 text-sm ${
+              withdrawnCount > 0
+                ? "bg-emerald-50 text-emerald-700"
+                : "bg-amber-50 text-amber-700"
+            }`}
+          >
+            {withdrawnCount > 0
+              ? t("shelf.withdrawSuccess", { n: withdrawnCount })
+              : t("shelf.withdrawNone")}
+          </p>
+        ) : null}
+        {transferredCount != null ? (
+          <p
+            className={`mb-3 rounded-xl px-3 py-2 text-sm ${
+              transferredCount > 0
+                ? "bg-emerald-50 text-emerald-700"
+                : "bg-amber-50 text-amber-700"
+            }`}
+          >
+            {transferredCount > 0
+              ? t("shelf.transferSuccess", { n: transferredCount })
+              : t("shelf.transferNone")}
+          </p>
+        ) : null}
         {owned.length === 0 ? (
           <div className="card p-4 text-center">
             <p className="text-sm text-stone-400">{t("shelf.ownedEmpty")}</p>
@@ -54,11 +95,49 @@ export default async function ShelfPage() {
             </Link>
           </div>
         ) : (
-          <div className="space-y-3">
+          <form action={withdrawOwnedBooksAction} className="space-y-3">
+            <input type="hidden" name="group_id" value={activeGroup.id} />
+            <div className="rounded-xl bg-stone-50 px-3 py-2 text-xs leading-5 text-stone-500">
+              {t("shelf.withdrawHint")}
+            </div>
             {owned.map((book) => (
-              <SimpleRow key={book.id} book={book} t={t} />
+              <OwnedRow key={book.id} book={book} t={t} />
             ))}
-          </div>
+            <div className="rounded-xl border border-stone-200 bg-white p-3">
+              <label className="label" htmlFor="target_group_id">
+                {t("shelf.transferTarget")}
+              </label>
+              <select
+                id="target_group_id"
+                name="target_group_id"
+                className="input"
+                disabled={targetGroups.length === 0}
+              >
+                {targetGroups.length === 0 ? (
+                  <option value="">{t("shelf.transferNoTarget")}</option>
+                ) : (
+                  targetGroups.map((group) => (
+                    <option key={group.id} value={group.id}>
+                      {group.name}
+                    </option>
+                  ))
+                )}
+              </select>
+              <p className="mt-1 text-xs leading-5 text-stone-500">
+                {t("shelf.transferHint")}
+              </p>
+            </div>
+            <button
+              formAction={transferOwnedBooksAction}
+              disabled={targetGroups.length === 0}
+              className="btn-secondary w-full disabled:opacity-50"
+            >
+              {t("shelf.transferSubmit")}
+            </button>
+            <button className="btn-secondary w-full border-red-200 text-red-700 hover:bg-red-50">
+              {t("shelf.withdrawSubmit")}
+            </button>
+          </form>
         )}
       </section>
     </div>
@@ -136,11 +215,20 @@ function HeldRow({
   );
 }
 
-function SimpleRow({ book, t }: { book: BookWithPeople; t: Translator }) {
+function OwnedRow({ book, t }: { book: BookWithPeople; t: Translator }) {
+  const checkboxId = `withdraw_${book.id}`;
   return (
-    <Link href={`/books/${book.id}`} className="card flex gap-3 p-3">
+    <div className="card flex gap-3 p-3">
+      <input
+        id={checkboxId}
+        type="checkbox"
+        name="book_id"
+        value={book.id}
+        className="mt-8 h-4 w-4 flex-shrink-0 rounded border-stone-300 text-brand-600"
+        aria-label={t("shelf.withdrawSelect", { title: book.title })}
+      />
       <Cover book={book} />
-      <div className="min-w-0 flex-1">
+      <Link href={`/books/${book.id}`} className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">
           <h3 className="line-clamp-2 font-medium leading-snug">{book.title}</h3>
           <StatusBadge status={book.status} t={t} />
@@ -156,7 +244,7 @@ function SimpleRow({ book, t }: { book: BookWithPeople; t: Translator }) {
             {t("book.hiddenBadge")}
           </span>
         ) : null}
-      </div>
-    </Link>
+      </Link>
+    </div>
   );
 }

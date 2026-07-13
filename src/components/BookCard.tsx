@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { BookWithPeople } from "@/lib/types";
 import type { Translator } from "@/lib/i18n";
-import { driveBetween, zipLabel } from "@/lib/geo";
+import { driveBetween } from "@/lib/geo";
 import { StatusBadge } from "./StatusBadge";
 
 export function BookCard({
@@ -13,7 +13,7 @@ export function BookCard({
   t: Translator;
   viewerZip?: string | null;
 }) {
-  const location = zipLabel(book.location_zip) ?? book.current_location_area;
+  const location = book.location_zip;
   const drive = driveBetween(viewerZip, book.location_zip);
 
   return (
@@ -40,11 +40,16 @@ export function BookCard({
         {book.author ? (
           <p className="mt-0.5 truncate text-sm text-stone-500">{book.author}</p>
         ) : null}
+        {book.isbn ? (
+          <p className="mt-0.5 truncate font-mono text-xs text-stone-400">
+            ISBN: {book.isbn}
+          </p>
+        ) : null}
         <div className="mt-auto flex flex-wrap gap-x-3 gap-y-1 pt-2 text-xs text-stone-500">
-          <span className="truncate">
+          <span className="truncate font-medium text-brand-700">
             {t("book.owner")}: {book.owner_name}
           </span>
-          <span className="truncate">
+          <span className="truncate font-medium text-emerald-700">
             {t("book.holder")}: {book.holder_name}
           </span>
           {location ? <span className="truncate">📍 {location}</span> : null}
@@ -69,9 +74,6 @@ export function BookCard({
           ) : null}
           {book.language ? (
             <span className="chip bg-stone-100 text-stone-600">{book.language}</span>
-          ) : null}
-          {book.age_range ? (
-            <span className="chip bg-sky-50 text-sky-700">{book.age_range}</span>
           ) : null}
         </div>
       </div>

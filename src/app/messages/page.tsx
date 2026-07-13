@@ -11,10 +11,10 @@ export default async function MessagesPage() {
 
   if (!user) redirect("/login?next=/messages");
 
-  const conversations = getConversations(user.id);
+  const conversations = await getConversations(user.id);
   const talkedTo = new Set(conversations.map((c) => c.user_id));
   const members = activeGroup
-    ? getGroupMembers(activeGroup.id).filter(
+    ? (await getGroupMembers(activeGroup.id)).filter(
         (m) => m.id !== user.id && !talkedTo.has(m.id)
       )
     : [];

@@ -13,7 +13,10 @@ export default async function ForgotPasswordPage({
   const sp = await searchParams;
   const sent = sp.sent === "1";
   const token = typeof sp.token === "string" ? sp.token : null;
-  const resetHref = token ? `/reset-password?token=${encodeURIComponent(token)}` : null;
+  const resetHref =
+    process.env.NODE_ENV !== "production" && token
+      ? `/reset-password?token=${encodeURIComponent(token)}`
+      : null;
 
   return (
     <div className="mx-auto mt-4 max-w-md">

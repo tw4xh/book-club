@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { InputHTMLAttributes } from "react";
+import type { InputHTMLAttributes, KeyboardEvent } from "react";
 import { ValidatedInput } from "@/components/ValidatedInput";
 
 type PasswordInputProps = Omit<InputHTMLAttributes<HTMLInputElement>, "type"> & {
@@ -9,23 +9,51 @@ type PasswordInputProps = Omit<InputHTMLAttributes<HTMLInputElement>, "type"> & 
   tooShortMessage?: string;
   showLabel: string;
   hideLabel: string;
+  capsLockLabel: string;
 };
 
 export function PasswordInput({
   className,
   showLabel,
   hideLabel,
+  capsLockLabel,
   ...props
 }: PasswordInputProps) {
   const [visible, setVisible] = useState(false);
+  const [capsLock, setCapsLock] = useState(false);
+
+  const updateCapsLock = (event: KeyboardEvent<HTMLInputElement>) => {
+    setCapsLock(event.getModifierState("CapsLock"));
+  };
 
   return (
     <div className="relative">
       <ValidatedInput
         {...props}
         type={visible ? "text" : "password"}
-        className={`${className ?? ""} pr-12`}
+        className={`${className ?? ""} pr-24`}
+        onKeyDown={(event) => {
+          updateCapsLock(event);
+          props.onKeyDown?.(event);
+        }}
+        onKeyUp={(event) => {
+          updateCapsLock(event);
+          props.onKeyUp?.(event);
+        }}
+        onBlur={(event) => {
+          setCapsLock(false);
+          props.onBlur?.(event);
+        }}
       />
+      {capsLock ? (
+        <span
+          className="absolute right-12 top-1/2 -translate-y-1/2 rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700 ring-1 ring-amber-200"
+          title={capsLockLabel}
+          aria-label={capsLockLabel}
+        >
+          ⇪
+        </span>
+      ) : null}
       <button
         type="button"
         onClick={() => setVisible((v) => !v)}

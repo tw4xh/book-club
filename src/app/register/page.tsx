@@ -43,6 +43,11 @@ export default async function RegisterPage({
             {t("login.passwordInvalid")}
           </p>
         ) : null}
+        {error === "consent_required" ? (
+          <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">
+            {t("register.consentRequired")}
+          </p>
+        ) : null}
 
         <div>
           <label className="label flex items-center gap-1" htmlFor="email">
@@ -96,6 +101,7 @@ export default async function RegisterPage({
             tooShortMessage={t("login.passwordInvalid")}
             showLabel={t("password.show")}
             hideLabel={t("password.hide")}
+            capsLockLabel={t("password.capsLock")}
           />
           <p className="mt-1 text-xs text-stone-400">{t("register.passwordHint")}</p>
         </div>
@@ -161,6 +167,23 @@ export default async function RegisterPage({
             className="input"
           />
         </div>
+
+        <label className="flex items-start gap-2 text-sm text-stone-600">
+          <input
+            type="checkbox"
+            name="consent"
+            value="1"
+            required
+            aria-required="true"
+            className="mt-0.5"
+          />
+          <span>
+            {t("register.consentPre")}{" "}
+            <Link href="/privacy" target="_blank" className="text-brand-600 underline">
+              {t("register.consentLink")}
+            </Link>
+          </span>
+        </label>
 
         <button type="submit" className="btn-primary w-full">
           {t("register.submit")}
