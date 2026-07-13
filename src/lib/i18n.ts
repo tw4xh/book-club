@@ -471,10 +471,10 @@ const zh: Dict = {
 
   "guest.title": "欢迎来到邻里书屋",
   "guest.body":
-    "和身边的朋友一起，把家里的中文书分享出来：谁有什么书、书现在在谁那里，一目了然，不需要专人管理。",
+    "和身边的朋友一起，把家里的好书分享出来：谁有什么书、书现在在谁那里，一目了然，不需要专人管理。",
   "guest.missionTitle": "这个网站的初衷",
   "guest.missionBody":
-    "邻里书屋希望做一个公益、非商业的小工具，帮助附近家庭把闲置中文书流动起来，让孩子更容易读到中文书，也让妈妈们少一点整理和协调负担。",
+    "邻里书屋希望做一个公益、非商业的小工具，帮助附近家庭把闲置好书流动起来，让孩子更容易读到好书，也让妈妈们少一点整理和协调负担。",
   "guest.openSource": "项目代码开源，欢迎查看、改进，也欢迎其他社区复制使用：",
   "guest.github": "GitHub 开源项目",
   "guest.registerCta": "注册开始使用",
@@ -1022,7 +1022,7 @@ const en: Dict = {
     "Together with the friends around you, share the books on your shelves: who has what, and where each book is right now, at a glance, with no librarian needed.",
   "guest.missionTitle": "Why this site exists",
   "guest.missionBody":
-    "Neighbor Book Club is intended as a nonprofit, community-first tool that helps nearby families keep Chinese books moving, so children can read more and parents spend less time coordinating by hand.",
+    "Neighbor Book Club is intended as a nonprofit, community-first tool that helps nearby families keep good books moving, so children can read more and parents spend less time coordinating by hand.",
   "guest.openSource":
     "The project is open source. You can review it, improve it, or reuse it for another community:",
   "guest.github": "GitHub open source project",
