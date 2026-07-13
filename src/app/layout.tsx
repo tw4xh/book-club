@@ -15,7 +15,7 @@ import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
 
 export const metadata: Metadata = {
   title: "邻里书屋 Neighbor Book Club",
-  description: "和身边的朋友一起分享中文书 · Share books with the friends around you",
+  description: "和身边的朋友一起分享好书 · Share books with the friends around you",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,

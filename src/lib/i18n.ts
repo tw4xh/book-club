@@ -9,7 +9,7 @@ type Dict = Record<string, string>;
 
 const zh: Dict = {
   "app.name": "邻里书屋",
-  "app.tagline": "和身边的朋友一起分享中文书",
+  "app.tagline": "和身边的朋友一起分享好书",
 
   "nav.catalog": "书目",
   "nav.shelf": "我的书架",
