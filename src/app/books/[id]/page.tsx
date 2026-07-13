@@ -126,6 +126,14 @@ export default async function BookPage({
             <p className="mt-2 text-xs text-stone-400">
               {t("book.addedByOrigin", { name: book.owner_name })}
             </p>
+            {isOwner ? (
+              <Link
+                href={`/books/${book.id}/edit`}
+                className="mt-2 inline-flex items-center gap-1 text-sm font-medium text-brand-600 hover:underline"
+              >
+                ✏️ {t("book.edit")}
+              </Link>
+            ) : null}
           </div>
         </div>
 

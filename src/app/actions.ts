@@ -56,6 +56,7 @@ import {
   setUserProfile,
   toggleRequestInterest,
   transferOwnedBooks,
+  updateBook,
   upsertUserByEmail,
   withdrawOwnedBooks,
 } from "@/lib/repo";
@@ -524,6 +525,49 @@ export async function addBookAction(formData: FormData) {
   revalidatePath("/");
   revalidatePath("/shelf");
   redirect("/");
+}
+
+export async function updateBookAction(formData: FormData) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+
+  const bookId = str(formData, "book_id");
+  if (!bookId) return;
+  const book = await getBookById(bookId);
+  if (!book) return;
+  if (book.owner_user_id !== user.id) return;
+
+  const title = str(formData, "title");
+  if (!title) redirect(`/books/${bookId}/edit?error=title`);
+
+  // Cover: an uploaded photo wins; otherwise an https URL (e.g. from ISBN
+  // lookup); otherwise leave the existing cover untouched.
+  const uploadedCover = await saveCover(formData);
+  const remoteCover = str(formData, "cover_url");
+  let cover: string | null | undefined = undefined;
+  if (uploadedCover) cover = uploadedCover;
+  else if (remoteCover && /^https:\/\//.test(remoteCover)) cover = remoteCover;
+
+  const shareMode = str(formData, "share_mode") === "lend" ? "lend" : "flow";
+
+  await updateBook(bookId, user.id, {
+    title,
+    author: str(formData, "author"),
+    language: str(formData, "language"),
+    isbn: str(formData, "isbn"),
+    condition: str(formData, "condition"),
+    notes: str(formData, "notes"),
+    share_mode: shareMode,
+    deposit: shareMode === "lend" ? str(formData, "deposit") : null,
+    visible_to_others:
+      shareMode !== "lend" || formData.get("visible_to_others") === "on",
+    cover_image_url: cover,
+  });
+
+  revalidatePath("/");
+  revalidatePath("/shelf");
+  revalidatePath(`/books/${bookId}`);
+  redirect(`/books/${bookId}`);
 }
 
 export async function importBooksFromSheetAction(formData: FormData) {

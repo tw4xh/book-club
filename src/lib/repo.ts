@@ -455,6 +455,65 @@ export async function getBookById(id: string): Promise<BookWithPeople | undefine
   return one<BookWithPeople>(`${BOOK_SELECT} WHERE b.id = $1`, [id]);
 }
 
+export interface UpdateBookInput {
+  title: string;
+  author: string | null;
+  language: string | null;
+  isbn: string | null;
+  condition: string | null;
+  notes: string | null;
+  share_mode: BookShareMode;
+  deposit: string | null;
+  visible_to_others: boolean;
+  // undefined = keep existing cover; string/null = replace it.
+  cover_image_url?: string | null;
+}
+
+/**
+ * Let a book's owner correct its descriptive fields (title, condition, etc.).
+ * Only metadata is editable here — holder/location/status are managed by the
+ * borrow lifecycle, not this form.
+ */
+export async function updateBook(
+  bookId: string,
+  ownerId: string,
+  input: UpdateBookInput
+): Promise<void> {
+  const book = await one<Book>("SELECT owner_user_id FROM books WHERE id = $1", [
+    bookId,
+  ]);
+  if (!book) throw new Error("Book not found");
+  if (book.owner_user_id !== ownerId)
+    throw new Error("Only the owner can edit this book");
+
+  const mode: BookShareMode = input.share_mode === "lend" ? "lend" : "flow";
+  await run(
+    `UPDATE books SET
+       title = $1, author = $2, language = $3, isbn = $4, condition = $5,
+       notes = $6, share_mode = $7, deposit = $8, visible_to_others = $9
+     WHERE id = $10`,
+    [
+      input.title.trim(),
+      input.author ?? null,
+      input.language ?? null,
+      input.isbn ?? null,
+      input.condition ?? null,
+      input.notes ?? null,
+      mode,
+      mode === "lend" ? (input.deposit ?? null) : null,
+      mode === "lend" && input.visible_to_others === false ? 0 : 1,
+      bookId,
+    ]
+  );
+
+  if (input.cover_image_url !== undefined) {
+    await run("UPDATE books SET cover_image_url = $1 WHERE id = $2", [
+      input.cover_image_url,
+      bookId,
+    ]);
+  }
+}
+
 export interface BookFilters {
   search?: string;
   language?: string;

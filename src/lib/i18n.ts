@@ -288,6 +288,7 @@ const zh: Dict = {
   "book.returnBody": "这本书属于 {name}，读完后请联系并把书还给 TA。",
   "book.returnToOwner": "已归还给分享者",
   "book.addedByOrigin": "最初由 {name} 分享",
+  "book.edit": "编辑图书信息",
   "book.getFrom": "向 TA 取书（现在持有）",
   "book.originalOwner": "最初分享者",
   "book.notAcceptingContact": "该成员暂不接受联系",
@@ -388,6 +389,12 @@ const zh: Dict = {
   "add.visibility.label": "让其他成员看到这本借阅书",
   "add.visibility.hint": "取消勾选后，这本书不会出现在其他人的书目和地图里。",
   "add.submit": "添加到书目",
+
+  "edit.title": "编辑图书信息",
+  "edit.subtitle": "修改书名、成色等信息，改完保存即可。",
+  "edit.hint": "只有书主可以编辑。分享方式、成色、备注等都能改。",
+  "edit.isbnLabel": "ISBN（可修改，或重新扫码识别）",
+  "edit.submit": "保存修改",
 
   "import.title": "从 Google Sheet 批量导入",
   "import.hint":
@@ -825,6 +832,7 @@ const en: Dict = {
     "This book belongs to {name}. When you're done, contact them and return it.",
   "book.returnToOwner": "Mark returned to owner",
   "book.addedByOrigin": "Originally shared by {name}",
+  "book.edit": "Edit book",
   "book.getFrom": "Pick it up from (has it now)",
   "book.originalOwner": "Originally shared by",
   "book.notAcceptingContact": "Not accepting messages right now",
@@ -932,6 +940,13 @@ const en: Dict = {
   "add.visibility.hint":
     "If unchecked, this book will not appear in other members' catalog or map.",
   "add.submit": "Add to catalog",
+
+  "edit.title": "Edit book",
+  "edit.subtitle": "Fix the title, condition, or other details, then save.",
+  "edit.hint":
+    "Only the owner can edit. You can change the share mode, condition, notes, and more.",
+  "edit.isbnLabel": "ISBN (editable, or re-scan to detect)",
+  "edit.submit": "Save changes",
 
   "import.title": "Import from Google Sheet",
   "import.hint":
