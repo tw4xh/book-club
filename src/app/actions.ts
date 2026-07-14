@@ -7,11 +7,19 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import {
   clearActiveGroup,
+  clearDemoToken,
   createSession,
   destroySession,
   getCurrentUser,
+  getDemoToken,
   setActiveGroup,
+  setDemoToken,
 } from "@/lib/auth";
+import {
+  cleanupExpiredDemoSessions,
+  deleteDemoSession,
+  provisionDemoSession,
+} from "@/lib/demo";
 import { LOCALE_COOKIE } from "@/lib/i18n";
 import { hashPassword, verifyPassword } from "@/lib/password";
 import { normalizeZip } from "@/lib/geo";
@@ -27,10 +35,10 @@ import {
   closeGroup,
   createPasswordResetToken,
   createBook,
-  creditCostForBook,
   createBookList,
   createBookRequest,
   createGroup,
+  dismissOnboarding,
   getBookById,
   getBookList,
   getGroupById,
@@ -48,6 +56,7 @@ import {
   sendDirectMessage,
   setBookVisibleToOthers,
   setBookStatus,
+  setGroupCreditMode,
   setGroupPolicy,
   setRequestStatus,
   setUserContactable,
@@ -113,17 +122,41 @@ export async function loginAction(formData: FormData) {
 }
 
 export async function demoLoginAction() {
-  const demoUser = await getUserByEmail("lily@example.com");
-  if (!demoUser) {
-    redirect("/?demo=missing");
+  // Best-effort: reap expired demo sandboxes before creating a new one.
+  await cleanupExpiredDemoSessions().catch(() => {});
+
+  let provisioned: Awaited<ReturnType<typeof provisionDemoSession>>;
+  try {
+    provisioned = await provisionDemoSession();
+  } catch {
+    redirect("/?demo=error");
   }
 
-  await createSession(demoUser.id);
-  const groups = await getGroupsForUser(demoUser.id);
-  if (groups[0]) {
-    await setActiveGroup(groups[0].id);
-  }
+  await createSession(provisioned.loginUserId);
+  await setActiveGroup(provisioned.groupId);
+  await setDemoToken(provisioned.token);
 
+  redirect("/");
+}
+
+export async function resetDemoAction() {
+  const token = await getDemoToken();
+  if (token) {
+    await deleteDemoSession(token).catch(() => {});
+  }
+  await clearDemoToken();
+  await destroySession();
+  // Start a fresh copy so the visitor stays in the demo, back at the original.
+  await demoLoginAction();
+}
+
+export async function exitDemoAction() {
+  const token = await getDemoToken();
+  if (token) {
+    await deleteDemoSession(token).catch(() => {});
+  }
+  await clearDemoToken();
+  await destroySession();
   redirect("/");
 }
 
@@ -169,6 +202,11 @@ export async function registerAction(formData: FormData) {
 }
 
 export async function logoutAction() {
+  const demoToken = await getDemoToken();
+  if (demoToken) {
+    await deleteDemoSession(demoToken).catch(() => {});
+    await clearDemoToken();
+  }
   await destroySession();
   redirect("/");
 }
@@ -268,7 +306,20 @@ export async function createGroupAction(formData: FormData) {
   await setActiveGroup(group.id);
 
   revalidatePath("/", "layout");
-  redirect("/groups");
+  // Drop the new founder into the guided setup flow instead of an empty catalog.
+  redirect(`/groups/${group.id}/setup`);
+}
+
+/** Founder finishes (or skips) the club setup guide so it stops nudging them. */
+export async function dismissOnboardingAction(formData: FormData) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  const groupId = str(formData, "group_id");
+  if (!groupId) redirect("/");
+  const membership = await getMembership(user.id, groupId);
+  if (membership) await dismissOnboarding(user.id, groupId);
+  revalidatePath("/", "layout");
+  redirect("/");
 }
 
 /** Owner-only: set or update the club's policy that members must agree to. */
@@ -284,6 +335,20 @@ export async function setGroupPolicyAction(formData: FormData) {
   await setGroupPolicy(groupId, policy);
   // Let every other member know the rules changed, with the new text attached.
   await notifyGroupMembers(groupId, user.id, "policy_changed", policy);
+  revalidatePath("/", "layout");
+  redirect("/groups");
+}
+
+/** Owner-only: toggle the club's borrow gate between trust and credit mode. */
+export async function setGroupCreditModeAction(formData: FormData) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  const groupId = str(formData, "group_id");
+  if (!groupId) return;
+  const membership = await getMembership(user.id, groupId);
+  if (!membership || membership.role !== "admin") redirect("/groups");
+
+  await setGroupCreditMode(groupId, str(formData, "credit_mode") === "credit");
   revalidatePath("/", "layout");
   redirect("/groups");
 }
@@ -594,8 +659,7 @@ export async function importBooksFromSheetAction(formData: FormData) {
   const groupId = str(formData, "group_id");
   const sheetUrl = str(formData, "sheet_url");
   if (!groupId || !sheetUrl) redirect("/books/new?import=missing");
-  if (!(await getMembership(user.id, groupId)))
-    redirect("/books/new?import=forbidden");
+  if (!(await getMembership(user.id, groupId))) redirect("/books/new?import=forbidden");
 
   const csvUrl = googleSheetCsvUrl(sheetUrl);
   if (!csvUrl) redirect("/books/new?import=bad_url");
@@ -791,14 +855,8 @@ export async function claimBookAction(formData: FormData) {
     redirect(`/books/${bookId}?error=hidden`);
   }
   // Give-to-get: you must have shared enough books before you can take one.
-  if (
-    book.owner_user_id !== user.id &&
-    !(await canBorrow(
-      user.id,
-      book.group_id,
-      await creditCostForBook(bookId, book.share_mode)
-    ))
-  ) {
+  // Borrowing always costs a flat 1 credit, so canBorrow's default applies.
+  if (book.owner_user_id !== user.id && !(await canBorrow(user.id, book.group_id))) {
     redirect(`/books/${bookId}?error=needcredit`);
   }
 

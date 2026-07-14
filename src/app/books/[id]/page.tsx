@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { createTranslator, getLocale, type Translator } from "@/lib/i18n";
 import { getSessionContext } from "@/lib/context";
 import {
-  creditCostForBook,
+  BORROW_COST,
   getBookById,
   getBookHoldings,
   getBookReviews,
@@ -12,7 +12,7 @@ import {
   getMembership,
   getUserById,
   getUserRating,
-  qualityBonus,
+  isCreditModeOn,
 } from "@/lib/repo";
 import { directionsUrl, driveBetween } from "@/lib/geo";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -69,10 +69,10 @@ export default async function BookPage({
     : { paypal: null, venmo: null, wechat: null };
   const ownerHasPay =
     !isOwner && Boolean(ownerPay.paypal || ownerPay.venmo || ownerPay.wechat);
+  const creditOn = await isCreditModeOn(book.group_id);
   const myCredit = await getCreditBalance(user.id, book.group_id);
-  const borrowCost = await creditCostForBook(book.id, book.share_mode);
-  const qBonus = qualityBonus(reviewSummary.avg);
-  const canBorrowBook = myCredit >= borrowCost;
+  const borrowCost = BORROW_COST;
+  const canBorrowBook = !creditOn || myCredit >= borrowCost;
   const needCreditError = sp.error === "needcredit";
   const fmtDate = (iso: string) =>
     new Date(iso).toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US", {
@@ -302,13 +302,17 @@ export default async function BookPage({
             {canBorrowBook ? (
               <>
                 <p className="mb-2 text-xs text-stone-500">{t("book.flowNote")}</p>
-                <p className="mb-2 text-xs font-medium text-brand-700">
-                  🪙{" "}
-                  {t(
-                    book.share_mode === "flow" ? "credit.costFlow" : "credit.costLend",
-                    { cost: borrowCost }
-                  )}
-                </p>
+                {creditOn ? (
+                  <p className="mb-2 text-xs font-medium text-brand-700">
+                    🪙{" "}
+                    {t(
+                      book.share_mode === "flow"
+                        ? "credit.costFlow"
+                        : "credit.costLend",
+                      { cost: borrowCost }
+                    )}
+                  </p>
+                ) : null}
                 <form action={claimBookAction}>
                   <input type="hidden" name="book_id" value={book.id} />
                   <button className="btn-primary w-full">
@@ -434,12 +438,6 @@ export default async function BookPage({
             </span>
           ) : null}
         </div>
-
-        {qBonus > 0 ? (
-          <p className="rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700">
-            {t(qBonus >= 2 ? "quality.high" : "quality.good")}
-          </p>
-        ) : null}
 
         {isOwner ? (
           <p className="rounded-lg bg-stone-50 px-3 py-2 text-xs text-stone-500">

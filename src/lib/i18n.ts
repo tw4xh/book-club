@@ -62,7 +62,7 @@ const zh: Dict = {
   "credit.costFlow": "这是漂流书（拿走归你）：将消耗 {cost} credit",
   "credit.costLend": "这是借阅书（需归还）：将消耗 {cost} credit",
   "credit.how":
-    "规则：漂流书（送出不还）拿走 +2/−2，借阅书（要还）+1/−1，高分好书再加 +1~+2。写书评和社区发言也可获得少量 credit：每本书评最多 +1，每天群聊发言最多 +1。",
+    "规则：借任何书都消耗 1 credit。你的书每被借走一次：漂流书（送出不还）书主 +2，借阅书（要归还）书主 +1。写书评和社区发言也可获得少量 credit：每本书评最多 +1，每天群聊发言最多 +1。",
 
   "level.new": "🌱 新书友",
   "level.active": "📗 热心书友",
@@ -91,11 +91,7 @@ const zh: Dict = {
   "review.anon": "匿名书友",
   "review.youAnon": "你（匿名）",
   "review.anonNote": "评分匿名，他人看不到是谁打的分。每本书每人只保留最新一条。",
-  "review.ownerNote":
-    "这是你分享的书，不能给自己评分。书评分越高，被拿走时你赚的 credit 越多。",
-
-  "quality.high": "⭐ 高质量好书：被拿走时书主多得 +2 credit",
-  "quality.good": "⭐ 口碑不错：被拿走时书主多得 +1 credit",
+  "review.ownerNote": "这是你分享的书，不能给自己评分。",
 
   "chat.title": "书友群聊",
   "chat.placeholder": "说点什么…",
@@ -226,6 +222,34 @@ const zh: Dict = {
 
   "catalog.title": "书目",
   "catalog.empty": "这个书友会还没有图书，快来添加第一本吧！",
+  "catalog.emptyTitle": "这个书友会还没有图书",
+  "catalog.emptyBody": "从这两步开始，让书流动起来：",
+  "catalog.emptyAdd": "添加第一本书",
+  "catalog.emptyAddHint": "扫一下书背 ISBN，书名和封面自动填好。",
+  "catalog.emptyInvite": "邀请邻居加入",
+  "catalog.emptyInviteHint": "人越多、书越多，才越好借。去“我的书友会”复制邀请链接。",
+  "catalog.noResults": "没有符合条件的书，试试调整或清除筛选。",
+
+  "setup.title": "书友会创建成功！",
+  "setup.subtitle": "《{group}》还差几步就能热闹起来。",
+  "setup.progress": "已完成 {done} / {total} 步",
+  "setup.step1Title": "添加你的前几本书",
+  "setup.step1Body": "先放上 3 本书，邻居一进来就有东西可借。",
+  "setup.booksAdded": "已添加图书",
+  "setup.addBook": "添加图书",
+  "setup.addBookHint": "扫一下书背 ISBN，书名和封面自动填好。",
+  "setup.step2Title": "邀请邻居加入",
+  "setup.step2Body": "把二维码发到微信群，扫码即可加入。",
+  "setup.qrAlt": "加入书友会的二维码",
+  "setup.qrHint": "长按或截图保存，发到微信群里最方便。",
+  "setup.inviteJoined": "太好了，已有 {n} 位邻居加入！",
+  "setup.inviteWaiting": "还没有人加入，把二维码发出去吧。",
+  "setup.step3Title": "大功告成",
+  "setup.step3Body": "随时可以回到这里继续设置。",
+  "setup.finish": "完成，进入书目",
+  "setup.remindLater": "稍后再说",
+  "setup.nudgeTitle": "继续完成书友会设置",
+  "setup.nudgeBody": "添加图书、邀请邻居，让书友会转起来。",
   "catalog.searchPlaceholder": "按书名或作者搜索",
   "catalog.filter.language": "语言",
   "catalog.filter.age": "适读年龄",
@@ -243,7 +267,7 @@ const zh: Dict = {
   "catalog.mapDrive": "约 {min} 分钟",
   "catalog.mapDirections": "导航",
   "catalog.mapMixed": "两种都有",
-  "catalog.mapReading": "半透明：在读",
+  "catalog.mapReading": "半透明：无需借阅（已借出，或是你自己的书）",
 
   "status.available": "空闲",
   "status.reading": "在读",
@@ -475,6 +499,13 @@ const zh: Dict = {
   "groups.policyNone": "（未设置规则）",
   "groups.editPolicy": "编辑入会须知（会主）",
   "groups.savePolicy": "保存规则",
+  "groups.creditModeTitle": "借阅方式",
+  "groups.creditModeTrust": "信任模式：大家可以自由借阅，不需要 credit。",
+  "groups.creditModeCredit": "Credit 模式：先分享才能借阅（先借出攒 credit）。",
+  "groups.creditModeEnable": "改用 Credit 模式",
+  "groups.creditModeDisable": "改回信任模式",
+  "groups.creditModeHint":
+    "会主可切换。熟人小圈子建议用信任模式；人多或想鼓励大家多分享时，可用 Credit 模式。",
 
   "join.title": "加入书友会",
   "join.confirm": "加入 “{name}”",
@@ -488,6 +519,23 @@ const zh: Dict = {
   "guest.title": "欢迎来到邻里书屋",
   "guest.body":
     "和身边的朋友一起，把家里的好书分享出来：谁有什么书、书现在在谁那里，一目了然，不需要专人管理。",
+  "guest.howTitle": "三步就能开始",
+  "guest.howSubtitle": "不需要专人管理，用手机就能分享和找书。",
+  "guest.step1Title": "分享你的书",
+  "guest.step1Body":
+    "把家里愿意分享的书添加进来。扫一下书背的 ISBN 条形码，书名、作者和封面会自动填好。",
+  "guest.step2Title": "发现身边的好书",
+  "guest.step2Body": "在书目和地图上，一眼看到谁有什么书、书现在在谁那里、离你有多远。",
+  "guest.step3Title": "就近取书，读完流转",
+  "guest.step3Body":
+    "联系持书的人自己约着取书。“漂流”的书读完传给下一位，“借阅”的书读完还给书主。",
+  "guest.featuresTitle": "这里能做什么",
+  "guest.featureMap": "按邮编在地图上找附近的书",
+  "guest.featureModes": "漂流（送出不还）或借阅（读完归还）两种方式",
+  "guest.featureCredit": "Credit 激励：先分享，才好借阅",
+  "guest.featureCommunity": "社区聊书、求书、分享推荐书单",
+  "guest.featureAssistant": "图书助手帮你找书、推荐下一本",
+  "guest.featureBilingual": "中英双语，手机上就能用",
   "guest.missionTitle": "这个网站的初衷",
   "guest.missionBody":
     "邻里书屋希望做一个公益、非商业的小工具，帮助附近家庭把闲置好书流动起来，让孩子更容易读到好书，也让妈妈们少一点整理和协调负担。",
@@ -496,7 +544,14 @@ const zh: Dict = {
   "guest.registerCta": "注册开始使用",
   "guest.demoCta": "先用示例数据体验",
   "guest.demoMissing": "还没有生成示例数据。请先运行 npm run seed:reset。",
+  "guest.demoError": "示例数据创建失败，请稍后再试。",
   "guest.loginCta": "已有账号，去登录",
+
+  "demo.bannerTitle": "演示模式",
+  "demo.bannerBody":
+    "你正在体验一个独立的示例副本。你的改动只影响这个副本，不会影响其他人；重置或退出后会恢复到最初的示例。",
+  "demo.reset": "重置示例",
+  "demo.exit": "退出演示",
 
   "donate.title": "支持邻里书屋",
   "donate.body":
@@ -589,7 +644,7 @@ const en: Dict = {
   "credit.costFlow": "Pass-on book (yours to keep): costs {cost} credit",
   "credit.costLend": "Lend book (must return): costs {cost} credit",
   "credit.how":
-    "Rule: pass-on books (no return) are +2/−2, lend books (returned) +1/−1, plus +1~+2 for highly-rated books. Reviews and community posts can also earn small credits: at most +1 per book reviewed and +1 per day for group chat.",
+    "Rule: borrowing any book costs 1 credit. Each time your book is taken: pass-on books (no return) earn the owner +2, lend books (returned) earn +1. Reviews and community posts can also earn small credits: at most +1 per book reviewed and +1 per day for group chat.",
 
   "level.new": "🌱 Newcomer",
   "level.active": "📗 Active sharer",
@@ -621,11 +676,7 @@ const en: Dict = {
   "review.youAnon": "You (anonymous)",
   "review.anonNote":
     "Ratings are anonymous — no one sees who rated. Only your latest rating per book is kept.",
-  "review.ownerNote":
-    "This is your book, so you can't rate it. The higher it's rated, the more credit you earn when it's taken.",
-
-  "quality.high": "⭐ Highly rated: owner earns +2 extra credit when taken",
-  "quality.good": "⭐ Well rated: owner earns +1 extra credit when taken",
+  "review.ownerNote": "This is your book, so you can't rate it.",
 
   "chat.title": "Club chat",
   "chat.placeholder": "Say something…",
@@ -772,6 +823,38 @@ const en: Dict = {
 
   "catalog.title": "Catalog",
   "catalog.empty": "This club has no books yet. Add the first one!",
+  "catalog.emptyTitle": "This club has no books yet",
+  "catalog.emptyBody": "Start with these two steps to get books moving:",
+  "catalog.emptyAdd": "Add the first book",
+  "catalog.emptyAddHint":
+    "Scan the ISBN barcode and the title and cover fill in for you.",
+  "catalog.emptyInvite": "Invite neighbors",
+  "catalog.emptyInviteHint":
+    "More members means more books to borrow. Copy your invite link from “My Clubs”.",
+  "catalog.noResults": "No books match your filters. Try adjusting or clearing them.",
+
+  "setup.title": "Your club is live!",
+  "setup.subtitle": "A few quick steps and “{group}” will be buzzing.",
+  "setup.progress": "{done} of {total} steps done",
+  "setup.step1Title": "Add your first books",
+  "setup.step1Body":
+    "Put up 3 books so neighbors have something to borrow the moment they arrive.",
+  "setup.booksAdded": "Books added",
+  "setup.addBook": "Add a book",
+  "setup.addBookHint": "Scan the ISBN barcode and the title and cover fill in for you.",
+  "setup.step2Title": "Invite neighbors",
+  "setup.step2Body": "Share the QR code in your WeChat group — they just scan to join.",
+  "setup.qrAlt": "QR code to join the club",
+  "setup.qrHint":
+    "Save or screenshot it — a QR is the easiest thing to drop in a WeChat group.",
+  "setup.inviteJoined": "Nice — {n} neighbor(s) have joined!",
+  "setup.inviteWaiting": "No one has joined yet. Share the QR code to get going.",
+  "setup.step3Title": "You're all set",
+  "setup.step3Body": "You can come back here to finish setup anytime.",
+  "setup.finish": "Done — go to the catalog",
+  "setup.remindLater": "Remind me later",
+  "setup.nudgeTitle": "Finish setting up your club",
+  "setup.nudgeBody": "Add books and invite neighbors to get things moving.",
   "catalog.searchPlaceholder": "Search by title or author",
   "catalog.filter.language": "Language",
   "catalog.filter.age": "Age",
@@ -792,7 +875,7 @@ const en: Dict = {
   "catalog.mapDrive": "about {min} min",
   "catalog.mapDirections": "Directions",
   "catalog.mapMixed": "Both",
-  "catalog.mapReading": "Transparent: being read",
+  "catalog.mapReading": "Transparent: no need to borrow (checked out, or your own)",
 
   "status.available": "Free",
   "status.reading": "Being read",
@@ -1040,6 +1123,14 @@ const en: Dict = {
   "groups.policyNone": "(no rules set)",
   "groups.editPolicy": "Edit policy (owner)",
   "groups.savePolicy": "Save rules",
+  "groups.creditModeTitle": "Borrowing mode",
+  "groups.creditModeTrust": "Trust mode: anyone can borrow freely — no credit needed.",
+  "groups.creditModeCredit":
+    "Credit mode: members must share before borrowing (lend to earn credit).",
+  "groups.creditModeEnable": "Switch to credit mode",
+  "groups.creditModeDisable": "Switch back to trust mode",
+  "groups.creditModeHint":
+    "Owners can switch anytime. Trust mode suits close friend groups; use credit mode for larger clubs or to encourage more sharing.",
 
   "join.title": "Join a club",
   "join.confirm": 'Join "{name}"',
@@ -1053,6 +1144,25 @@ const en: Dict = {
   "guest.title": "Welcome to Neighbor Book Club",
   "guest.body":
     "Together with the friends around you, share the books on your shelves: who has what, and where each book is right now, at a glance, with no librarian needed.",
+  "guest.howTitle": "Get started in three steps",
+  "guest.howSubtitle":
+    "No librarian needed — share and find books right from your phone.",
+  "guest.step1Title": "Share your books",
+  "guest.step1Body":
+    "Add books you're happy to share. Scan the ISBN barcode on the back cover and the title, author, and cover fill in automatically.",
+  "guest.step2Title": "Find books nearby",
+  "guest.step2Body":
+    "In the catalog and on the map, see who has what, who's holding each book now, and how far away it is.",
+  "guest.step3Title": "Meet up and pass it on",
+  "guest.step3Body":
+    "Contact whoever has the book to arrange pickup. Pass-on books go to the next reader; lend books go back to the owner when you're done.",
+  "guest.featuresTitle": "What you can do here",
+  "guest.featureMap": "Find nearby books on a map by ZIP code",
+  "guest.featureModes": "Pass it on (keep it moving) or lend (returned when done)",
+  "guest.featureCredit": "Credit system: share first, then borrow",
+  "guest.featureCommunity": "Community chat, wanted books, and reading lists",
+  "guest.featureAssistant": "A book assistant to find titles and suggest the next read",
+  "guest.featureBilingual": "Bilingual (中文/EN), works great on your phone",
   "guest.missionTitle": "Why this site exists",
   "guest.missionBody":
     "Neighbor Book Club is intended as a nonprofit, community-first tool that helps nearby families keep good books moving, so children can read more and parents spend less time coordinating by hand.",
@@ -1063,7 +1173,14 @@ const en: Dict = {
   "guest.demoCta": "Try the demo first",
   "guest.demoMissing":
     "Demo data has not been created yet. Run npm run seed:reset first.",
+  "guest.demoError": "Could not create the demo right now. Please try again.",
   "guest.loginCta": "Already have an account? Log in",
+
+  "demo.bannerTitle": "Demo mode",
+  "demo.bannerBody":
+    "You're exploring your own private demo copy. Your changes only affect this copy, never other people — reset or exit to return to the original demo.",
+  "demo.reset": "Reset demo",
+  "demo.exit": "Exit demo",
 
   "donate.title": "Support Neighbor Book Club",
   "donate.body":

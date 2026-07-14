@@ -5,6 +5,7 @@ import type { User } from "./types";
 
 const SESSION_COOKIE = "session";
 const ACTIVE_GROUP_COOKIE = "active_group";
+const DEMO_COOKIE = "demo";
 const INSECURE_DEFAULT_SECRET = "dev-insecure-secret-change-me";
 const MAX_AGE = 60 * 60 * 24 * 60; // 60 days
 
@@ -94,4 +95,28 @@ export async function clearActiveGroup(): Promise<void> {
 export async function getActiveGroupId(): Promise<string | null> {
   const store = await cookies();
   return store.get(ACTIVE_GROUP_COOKIE)?.value ?? null;
+}
+
+/** Marks the current session as a demo sandbox (stores the demo session token). */
+export async function setDemoToken(token: string): Promise<void> {
+  const store = await cookies();
+  store.set(DEMO_COOKIE, sign(token), {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: MAX_AGE,
+  });
+}
+
+export async function getDemoToken(): Promise<string | null> {
+  const store = await cookies();
+  const raw = store.get(DEMO_COOKIE)?.value;
+  if (!raw) return null;
+  return unsign(raw);
+}
+
+export async function clearDemoToken(): Promise<void> {
+  const store = await cookies();
+  store.delete(DEMO_COOKIE);
 }

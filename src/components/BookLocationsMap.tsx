@@ -12,20 +12,22 @@ type LocationBucket = {
   count: number;
   lendCount: number;
   flowCount: number;
-  readingCount: number;
+  unavailableCount: number;
   titles: string[];
 };
 
 export function BookLocationsMap({
   books,
   viewerZip,
+  viewerId,
   t,
 }: {
   books: BookWithPeople[];
   viewerZip: string | null | undefined;
+  viewerId: string;
   t: Translator;
 }) {
-  const buckets = bucketBooksByZip(books);
+  const buckets = bucketBooksByZip(books, viewerId);
   if (buckets.length === 0) return null;
 
   return (
@@ -102,17 +104,16 @@ export function BookLocationsMap({
   );
 }
 
-// A book counts as "reading" (shown transparent) only when it's actually out
-// with a borrower. A book sitting in its owner's own hands is available to
-// request, so it stays solid even if the owner marked it "reading".
-function isBeingRead(book: BookWithPeople): boolean {
-  return (
-    book.status === "reading" &&
-    book.current_holder_user_id !== book.owner_user_id
-  );
+// A book is shown transparent when it isn't something the viewer can borrow
+// right now: either it's checked out (in someone else's hands, so not available
+// from the owner), or the viewer already owns it (no need to borrow their own).
+function isNotBorrowable(book: BookWithPeople, viewerId: string): boolean {
+  const checkedOut = book.current_holder_user_id !== book.owner_user_id;
+  const ownedByViewer = book.owner_user_id === viewerId;
+  return checkedOut || ownedByViewer;
 }
 
-function bucketBooksByZip(books: BookWithPeople[]): LocationBucket[] {
+function bucketBooksByZip(books: BookWithPeople[], viewerId: string): LocationBucket[] {
   const byZip = new Map<string, LocationBucket>();
   for (const book of books) {
     const loc = lookupZip(book.location_zip);
@@ -125,8 +126,8 @@ function bucketBooksByZip(books: BookWithPeople[]): LocationBucket[] {
       } else {
         existing.lendCount += 1;
       }
-      if (isBeingRead(book)) {
-        existing.readingCount += 1;
+      if (isNotBorrowable(book, viewerId)) {
+        existing.unavailableCount += 1;
       }
       existing.titles.push(book.title);
     } else {
@@ -138,7 +139,7 @@ function bucketBooksByZip(books: BookWithPeople[]): LocationBucket[] {
         count: 1,
         lendCount: book.share_mode === "lend" ? 1 : 0,
         flowCount: book.share_mode === "flow" ? 1 : 0,
-        readingCount: isBeingRead(book) ? 1 : 0,
+        unavailableCount: isNotBorrowable(book, viewerId) ? 1 : 0,
         titles: [book.title],
       });
     }

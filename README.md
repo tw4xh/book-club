@@ -64,13 +64,14 @@ production.
 
 ## Getting started
 
-You need a Postgres database. The quickest local option is Docker:
+You need a Postgres database. The quickest local option is Docker Compose:
 
 ```bash
-docker run -d --name bookclub-pg \
-  -e POSTGRES_USER=bookclub -e POSTGRES_PASSWORD=bookclub -e POSTGRES_DB=bookclub \
-  -p 5433:5432 postgres:16
+docker compose up -d          # starts Postgres on localhost:5433
 ```
+
+(Equivalent one-off: `docker run -d --name bookclub-pg -e POSTGRES_USER=bookclub
+-e POSTGRES_PASSWORD=bookclub -e POSTGRES_DB=bookclub -p 5433:5432 postgres:16`.)
 
 Then:
 
@@ -91,6 +92,10 @@ own club from the **My Clubs** tab.
 npm run build
 npm start
 ```
+
+> **Making changes once you have real users?** See [DEPLOYMENT.md](./DEPLOYMENT.md)
+> for the branch → Preview → production workflow, staging database setup, safe
+> schema-migration rules, and how to roll back.
 
 ## Deploying to Supabase + Vercel
 

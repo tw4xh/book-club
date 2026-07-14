@@ -7,6 +7,7 @@ import {
   joinGroupAction,
   leaveGroupAction,
   setContactableAction,
+  setGroupCreditModeAction,
   setGroupPolicyAction,
   setPaymentHandlesAction,
   setProfileAction,
@@ -145,6 +146,34 @@ export default async function GroupsPage({
                         </button>
                       </form>
                     </details>
+                  ) : null}
+                  {isAdmin ? (
+                    <div className="mt-3 border-t border-stone-200 pt-3">
+                      <p className="text-xs font-semibold text-stone-500">
+                        {t("groups.creditModeTitle")}
+                      </p>
+                      <p className="mt-1 text-sm text-stone-700">
+                        {g.credit_mode === "credit"
+                          ? t("groups.creditModeCredit")
+                          : t("groups.creditModeTrust")}
+                      </p>
+                      <p className="mt-1 text-xs text-stone-400">
+                        {t("groups.creditModeHint")}
+                      </p>
+                      <form action={setGroupCreditModeAction} className="mt-2">
+                        <input type="hidden" name="group_id" value={g.id} />
+                        <input
+                          type="hidden"
+                          name="credit_mode"
+                          value={g.credit_mode === "credit" ? "trust" : "credit"}
+                        />
+                        <button className="btn-secondary w-full py-1.5 text-xs">
+                          {g.credit_mode === "credit"
+                            ? t("groups.creditModeDisable")
+                            : t("groups.creditModeEnable")}
+                        </button>
+                      </form>
+                    </div>
                   ) : null}
                   {isAdmin ? (
                     <details className="mt-3 border-t border-stone-200 pt-3">

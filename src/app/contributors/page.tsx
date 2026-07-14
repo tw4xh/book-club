@@ -1,7 +1,12 @@
 import { redirect } from "next/navigation";
 import { createTranslator, getLocale } from "@/lib/i18n";
 import { getSessionContext } from "@/lib/context";
-import { getCreditBalance, getGroupLeaderboard, getUserContribution } from "@/lib/repo";
+import {
+  getCreditBalance,
+  getGroupLeaderboard,
+  getUserContribution,
+  isCreditModeOn,
+} from "@/lib/repo";
 
 const MEDALS = ["🥇", "🥈", "🥉"];
 
@@ -13,6 +18,7 @@ export default async function ContributorsPage() {
   if (!user) redirect("/login?next=/contributors");
   if (!activeGroup) redirect("/groups");
 
+  const creditOn = await isCreditModeOn(activeGroup.id);
   const board = await getGroupLeaderboard(activeGroup.id);
   const mine = await getUserContribution(user.id, activeGroup.id);
   const myCredit = await getCreditBalance(user.id, activeGroup.id);
@@ -28,16 +34,20 @@ export default async function ContributorsPage() {
         <p className="text-xs font-semibold text-brand-700">{t("board.myStanding")}</p>
         <div className="mt-1 flex items-center justify-between">
           <span className="text-base font-semibold">{t(`level.${mine.level}`)}</span>
-          <span className="rounded-full bg-white px-2 py-0.5 text-sm font-semibold text-brand-700">
-            🪙 {t("credit.balance")}: {myCredit}
-          </span>
+          {creditOn ? (
+            <span className="rounded-full bg-white px-2 py-0.5 text-sm font-semibold text-brand-700">
+              🪙 {t("credit.balance")}: {myCredit}
+            </span>
+          ) : null}
         </div>
         <p className="mt-1 text-xs text-stone-500">
           {t("board.shared", { count: mine.shared })} ·{" "}
           {t("board.lent", { count: mine.lent })} ·{" "}
           {t("board.score", { score: mine.score })}
         </p>
-        <p className="mt-2 text-xs text-stone-400">{t("credit.how")}</p>
+        {creditOn ? (
+          <p className="mt-2 text-xs text-stone-400">{t("credit.how")}</p>
+        ) : null}
       </div>
 
       {board.length === 0 ? (
@@ -71,7 +81,7 @@ export default async function ContributorsPage() {
                   </p>
                 </div>
                 <span className="flex-shrink-0 text-right text-sm font-semibold text-brand-700">
-                  🪙 {e.balance}
+                  {creditOn ? `🪙 ${e.balance}` : t(`level.${e.level}`).split(" ")[0]}
                   <span className="block text-xs font-normal text-stone-400">
                     {t("board.score", { score: e.score })}
                   </span>
