@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 import { addBookAction } from "@/app/actions";
 import { BarcodeScanner } from "./BarcodeScanner";
+import { CoverPhotoInput, type CoverPhotoLabels } from "./CoverPhotoInput";
 
 export interface AddBookLabels {
   isbnTitle: string;
@@ -59,11 +60,13 @@ export function AddBookForm({
   defaultZip,
   defaultLanguage,
   labels,
+  coverLabels,
 }: {
   groupId: string;
   defaultZip: string;
   defaultLanguage: string;
   labels: AddBookLabels;
+  coverLabels: CoverPhotoLabels;
 }) {
   const [isbn, setIsbn] = useState("");
   const [title, setTitle] = useState("");
@@ -352,17 +355,11 @@ export function AddBookForm({
           </summary>
           <div className="mt-3 space-y-4">
             <div>
-              <label className="label" htmlFor="cover">
+              <span className="label">
                 {labels.fieldCoverReplace}{" "}
                 <span className="text-stone-400">({labels.optional})</span>
-              </label>
-              <input
-                id="cover"
-                name="cover"
-                type="file"
-                accept="image/*"
-                className="input"
-              />
+              </span>
+              <CoverPhotoInput labels={coverLabels} />
             </div>
             <div>
               <label className="label" htmlFor="notes">

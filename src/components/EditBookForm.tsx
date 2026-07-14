@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import { updateBookAction } from "@/app/actions";
 import { BarcodeScanner } from "./BarcodeScanner";
 import type { AddBookLabels } from "./AddBookForm";
+import { CoverPhotoInput, type CoverPhotoLabels } from "./CoverPhotoInput";
 
 export interface EditBookLabels extends AddBookLabels {
   editHint: string;
@@ -22,6 +23,7 @@ function mapLanguage(code: string | null): string {
 export function EditBookForm({
   book,
   labels,
+  coverLabels,
 }: {
   book: {
     id: string;
@@ -37,6 +39,7 @@ export function EditBookForm({
     cover_image_url: string | null;
   };
   labels: EditBookLabels;
+  coverLabels: CoverPhotoLabels;
 }) {
   const [isbn, setIsbn] = useState(book.isbn ?? "");
   const [title, setTitle] = useState(book.title);
@@ -279,11 +282,11 @@ export function EditBookForm({
         </div>
 
         <div>
-          <label className="label" htmlFor="cover">
+          <span className="label">
             {labels.fieldCoverReplace}{" "}
             <span className="text-stone-400">({labels.optional})</span>
-          </label>
-          <input id="cover" name="cover" type="file" accept="image/*" className="input" />
+          </span>
+          <CoverPhotoInput labels={coverLabels} />
         </div>
 
         <div>

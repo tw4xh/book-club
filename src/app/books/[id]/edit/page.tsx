@@ -91,6 +91,16 @@ export default async function EditBookPage({
             editHint: t("edit.hint"),
             isbnLabel: t("edit.isbnLabel"),
           }}
+          coverLabels={{
+            pick: t("cover.pick"),
+            editTitle: t("cover.editTitle"),
+            rotate: t("cover.rotate"),
+            zoom: t("cover.zoom"),
+            done: t("cover.done"),
+            cancel: t("cover.cancel"),
+            replace: t("cover.replace"),
+            hint: t("cover.hint"),
+          }}
         />
       </div>
     </div>

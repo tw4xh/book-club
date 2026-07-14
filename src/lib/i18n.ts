@@ -396,6 +396,15 @@ const zh: Dict = {
   "edit.isbnLabel": "ISBN（可修改，或重新扫码识别）",
   "edit.submit": "保存修改",
 
+  "cover.pick": "上传封面照片",
+  "cover.replace": "更换封面照片",
+  "cover.hint": "可以拍照或从相册选择，上传后能旋转和裁剪。",
+  "cover.editTitle": "旋转并裁剪封面",
+  "cover.rotate": "旋转",
+  "cover.zoom": "缩放",
+  "cover.done": "完成",
+  "cover.cancel": "取消",
+
   "import.title": "从 Google Sheet 批量导入",
   "import.hint":
     "把表格设置为“知道链接的人可查看”，然后粘贴 Google Sheet 链接。第一行需要是表头；有 ISBN 的行会自动用图书 API 补齐空字段。",
@@ -947,6 +956,15 @@ const en: Dict = {
     "Only the owner can edit. You can change the share mode, condition, notes, and more.",
   "edit.isbnLabel": "ISBN (editable, or re-scan to detect)",
   "edit.submit": "Save changes",
+
+  "cover.pick": "Upload cover photo",
+  "cover.replace": "Replace cover photo",
+  "cover.hint": "Take a photo or choose from your library, then rotate and crop.",
+  "cover.editTitle": "Rotate & crop cover",
+  "cover.rotate": "Rotate",
+  "cover.zoom": "Zoom",
+  "cover.done": "Done",
+  "cover.cancel": "Cancel",
 
   "import.title": "Import from Google Sheet",
   "import.hint":

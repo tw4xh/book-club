@@ -407,6 +407,18 @@ const UPLOAD_DIR = path.join(process.cwd(), "public", "uploads");
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 const ALLOWED_IMAGE = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 
+// Covers are cropped/rotated in the browser and submitted as a small JPEG data
+// URL. Storing the data URL directly (like generated covers) keeps uploads
+// working on read-only/serverless filesystems. Reject anything oversized or not
+// an image data URL.
+const MAX_COVER_DATA_LENGTH = 2_000_000; // ~1.5MB image once base64-decoded
+function coverDataUrl(value: string | null): string | null {
+  if (!value) return null;
+  if (!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(value)) return null;
+  if (value.length > MAX_COVER_DATA_LENGTH) return null;
+  return value;
+}
+
 async function saveCover(formData: FormData): Promise<string | null> {
   const file = formData.get("cover");
   if (!(file instanceof File) || file.size === 0) return null;
@@ -487,10 +499,13 @@ export async function addBookAction(formData: FormData) {
   if (!groupId || (!title && !isbn)) return;
   if (!(await getMembership(user.id, groupId))) return;
 
-  const uploadedCover = await saveCover(formData);
-  // Prefer an uploaded photo; otherwise fall back to a cover URL from ISBN lookup.
+  // Prefer a cropped photo (data URL), then a legacy uploaded file, then a
+  // cover URL from ISBN lookup.
+  const croppedCover = coverDataUrl(str(formData, "cover_data"));
+  const uploadedCover = croppedCover ? null : await saveCover(formData);
   const remoteCover = str(formData, "cover_url");
   const cover =
+    croppedCover ??
     uploadedCover ??
     (remoteCover && /^https:\/\//.test(remoteCover) ? remoteCover : null);
   const locationZip = normalizeZip(str(formData, "location_zip")) ?? user.home_zip;
@@ -540,12 +555,14 @@ export async function updateBookAction(formData: FormData) {
   const title = str(formData, "title");
   if (!title) redirect(`/books/${bookId}/edit?error=title`);
 
-  // Cover: an uploaded photo wins; otherwise an https URL (e.g. from ISBN
-  // lookup); otherwise leave the existing cover untouched.
-  const uploadedCover = await saveCover(formData);
+  // Cover: a cropped photo wins; then a legacy uploaded file; then an https URL
+  // (e.g. from ISBN lookup); otherwise leave the existing cover untouched.
+  const croppedCover = coverDataUrl(str(formData, "cover_data"));
+  const uploadedCover = croppedCover ? null : await saveCover(formData);
   const remoteCover = str(formData, "cover_url");
   let cover: string | null | undefined = undefined;
-  if (uploadedCover) cover = uploadedCover;
+  if (croppedCover) cover = croppedCover;
+  else if (uploadedCover) cover = uploadedCover;
   else if (remoteCover && /^https:\/\//.test(remoteCover)) cover = remoteCover;
 
   const shareMode = str(formData, "share_mode") === "lend" ? "lend" : "flow";
