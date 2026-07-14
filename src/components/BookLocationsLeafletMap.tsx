@@ -11,7 +11,7 @@ export type MapBucket = {
   count: number;
   lendCount: number;
   flowCount: number;
-  readingCount: number;
+  unavailableCount: number;
 };
 
 export function BookLocationsLeafletMap({
@@ -61,7 +61,7 @@ export function BookLocationsLeafletMap({
         const tooltip = getTooltip(bucket, modeLabels);
         const icon = leaflet.divIcon({
           className: "",
-          html: `<div class="book-map-marker book-map-marker--${markerKind}${bucket.readingCount === bucket.count ? " book-map-marker--reading" : ""}">${bucket.count}</div>`,
+          html: `<div class="book-map-marker book-map-marker--${markerKind}${bucket.unavailableCount === bucket.count ? " book-map-marker--reading" : ""}">${bucket.count}</div>`,
           iconSize: [32, 32],
           iconAnchor: [16, 16],
         });
@@ -113,7 +113,9 @@ function getTooltip(
   modeLabels: { lend: string; flow: string; mixed: string; reading: string }
 ) {
   const reading =
-    bucket.readingCount > 0 ? `, ${modeLabels.reading} ${bucket.readingCount}` : "";
+    bucket.unavailableCount > 0
+      ? `, ${modeLabels.reading} ${bucket.unavailableCount}`
+      : "";
   if (bucket.lendCount > 0 && bucket.flowCount > 0) {
     return `${bucket.label}: ${bucket.count} (${modeLabels.lend} ${bucket.lendCount}, ${modeLabels.flow} ${bucket.flowCount}${reading})`;
   }

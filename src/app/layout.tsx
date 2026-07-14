@@ -3,14 +3,18 @@ import Link from "next/link";
 import "leaflet/dist/leaflet.css";
 import "./globals.css";
 import { getLocale, createTranslator } from "@/lib/i18n";
+import { getDemoToken } from "@/lib/auth";
+import { touchDemoSession } from "@/lib/demo";
 import { getSessionContext } from "@/lib/context";
 import {
   getCreditBalance,
   getUnreadDmCount,
   getUnreadNotificationCount,
+  isCreditModeOn,
 } from "@/lib/repo";
 import { TopBar } from "@/components/TopBar";
 import { BottomNav } from "@/components/BottomNav";
+import { DemoBanner } from "@/components/DemoBanner";
 import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
 
 export const metadata: Metadata = {
@@ -35,10 +39,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const locale = await getLocale();
   const t = createTranslator(locale);
   const { user, groups, activeGroup } = await getSessionContext();
+  const demoToken = user ? await getDemoToken() : null;
+  if (demoToken) await touchDemoSession(demoToken).catch(() => {});
   const unreadCount = user ? await getUnreadNotificationCount(user.id) : 0;
   const dmUnread = user ? await getUnreadDmCount(user.id) : 0;
   const creditBalance =
-    user && activeGroup ? await getCreditBalance(user.id, activeGroup.id) : null;
+    user && activeGroup && (await isCreditModeOn(activeGroup.id))
+      ? await getCreditBalance(user.id, activeGroup.id)
+      : null;
 
   return (
     <html lang={locale === "zh" ? "zh-CN" : "en"}>
@@ -64,7 +72,19 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               creditHow: t("credit.how"),
             }}
           />
-          <main className="flex-1 px-4 pt-4 sm:px-6 lg:px-8">{children}</main>
+          <main className="flex-1 px-4 pt-4 sm:px-6 lg:px-8">
+            {demoToken ? (
+              <DemoBanner
+                labels={{
+                  title: t("demo.bannerTitle"),
+                  body: t("demo.bannerBody"),
+                  reset: t("demo.reset"),
+                  exit: t("demo.exit"),
+                }}
+              />
+            ) : null}
+            {children}
+          </main>
           <footer className="px-4 pb-28 pt-6 text-center text-xs text-stone-400 sm:px-6 lg:px-8">
             <Link href="/privacy" className="hover:text-stone-600">
               {t("nav.privacy")}

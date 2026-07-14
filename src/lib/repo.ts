@@ -198,19 +198,20 @@ export async function setUserPaymentHandles(
     const s = (v ?? "").trim();
     return s.length > 0 ? s : null;
   };
-  await run("UPDATE users SET pay_paypal = $1, pay_venmo = $2, pay_wechat = $3 WHERE id = $4", [
-    clean(handles.paypal),
-    clean(handles.venmo),
-    clean(handles.wechat),
-    userId,
-  ]);
+  await run(
+    "UPDATE users SET pay_paypal = $1, pay_venmo = $2, pay_wechat = $3 WHERE id = $4",
+    [clean(handles.paypal), clean(handles.venmo), clean(handles.wechat), userId]
+  );
 }
 
 export async function setUserPasswordHash(
   userId: string,
   passwordHash: string
 ): Promise<void> {
-  await run("UPDATE users SET password_hash = $1 WHERE id = $2", [passwordHash, userId]);
+  await run("UPDATE users SET password_hash = $1 WHERE id = $2", [
+    passwordHash,
+    userId,
+  ]);
 }
 
 export interface PasswordResetRequest {
@@ -301,6 +302,23 @@ export async function setGroupPolicy(
   await run("UPDATE groups SET policy = $1 WHERE id = $2", [policy, groupId]);
 }
 
+/** Whether a club enforces the "lend first, then borrow" credit gate. */
+export async function isCreditModeOn(groupId: string): Promise<boolean> {
+  const row = await one<{ credit_mode: string }>(
+    "SELECT credit_mode FROM groups WHERE id = $1",
+    [groupId]
+  );
+  return row?.credit_mode === "credit";
+}
+
+/** Owner control: turn the credit gate on ("credit") or off ("trust"). */
+export async function setGroupCreditMode(groupId: string, on: boolean): Promise<void> {
+  await run("UPDATE groups SET credit_mode = $1 WHERE id = $2", [
+    on ? "credit" : "trust",
+    groupId,
+  ]);
+}
+
 export async function closeGroup(groupId: string): Promise<void> {
   await run("DELETE FROM groups WHERE id = $1", [groupId]);
 }
@@ -375,6 +393,29 @@ export async function removeMembership(userId: string, groupId: string): Promise
     userId,
     groupId,
   ]);
+}
+
+/** Number of books this member has added to a club (their own shelf in it). */
+export async function countBooksOwnedByUser(
+  userId: string,
+  groupId: string
+): Promise<number> {
+  const row = await one<{ c: number }>(
+    "SELECT COUNT(*)::int AS c FROM books WHERE owner_user_id = $1 AND group_id = $2",
+    [userId, groupId]
+  );
+  return row?.c ?? 0;
+}
+
+/** Mark the founder's setup guide as finished so it stops nudging them. */
+export async function dismissOnboarding(
+  userId: string,
+  groupId: string
+): Promise<void> {
+  await run(
+    "UPDATE memberships SET onboarding_dismissed_at = $1 WHERE user_id = $2 AND group_id = $3",
+    [nowIso(), userId, groupId]
+  );
 }
 
 export async function getGroupsForUser(userId: string): Promise<GroupWithRole[]> {
@@ -667,7 +708,9 @@ export async function transferOwnedBooks(
       await tx.run("DELETE FROM ratings WHERE book_id = $1", [bookId]);
       await tx.run("DELETE FROM holdings WHERE book_id = $1", [bookId]);
       await tx.run("DELETE FROM book_reviews WHERE book_id = $1", [bookId]);
-      await tx.run("UPDATE credit_events SET book_id = NULL WHERE book_id = $1", [bookId]);
+      await tx.run("UPDATE credit_events SET book_id = NULL WHERE book_id = $1", [
+        bookId,
+      ]);
       await tx.run(
         "UPDATE books SET group_id = $1, status = 'available' WHERE id = $2",
         [targetGroupId, bookId]
@@ -725,10 +768,6 @@ export async function claimBook(bookId: string, newHolderId: string): Promise<vo
   }
   const holder = await getUserById(newHolderId);
   const at = nowIso();
-  const cost =
-    newHolderId !== book.owner_user_id
-      ? await creditCostForBook(bookId, book.share_mode)
-      : 0;
   await withTransaction(async (tx) => {
     await closeOpenHolding(tx, bookId, "passed_on", at);
     await openHolding(tx, bookId, newHolderId, at);
@@ -746,14 +785,15 @@ export async function claimBook(bookId: string, newHolderId: string): Promise<vo
         bookId,
       ]
     );
-    // Credit ledger: taking someone else's book costs the taker and pays the
-    // owner. Conserved (+ and - cancel), so colluders can't mint net credit.
+    // Credit ledger: taking someone else's book always costs the taker 1, and
+    // pays the owner +1 (lend, returns) or +2 (flow, kept). Flow nets +1 into
+    // the club on purpose, to reward donating a book for good.
     if (newHolderId !== book.owner_user_id) {
       await addCreditEvent(
         tx,
         book.group_id,
         newHolderId,
-        -cost,
+        -BORROW_COST,
         "borrow",
         bookId,
         book.owner_user_id,
@@ -763,7 +803,7 @@ export async function claimBook(bookId: string, newHolderId: string): Promise<vo
         tx,
         book.group_id,
         book.owner_user_id,
-        cost,
+        ownerRewardFor(book.share_mode),
         "lend",
         bookId,
         newHolderId,
@@ -912,10 +952,10 @@ export async function getUnreadNotificationCount(userId: string): Promise<number
 }
 
 export async function markNotificationsRead(userId: string): Promise<void> {
-  await run("UPDATE notifications SET read_at = $1 WHERE user_id = $2 AND read_at IS NULL", [
-    nowIso(),
-    userId,
-  ]);
+  await run(
+    "UPDATE notifications SET read_at = $1 WHERE user_id = $2 AND read_at IS NULL",
+    [nowIso(), userId]
+  );
 }
 
 /** Aggregate credit (average stars + count) a member has received. */
@@ -959,7 +999,16 @@ export async function rateBorrower(
        (id, holding_id, book_id, rater_user_id, ratee_user_id, stars, comment, created_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      ON CONFLICT (holding_id) DO NOTHING`,
-    [newId(), holdingId, book.id, raterId, holding.holder_user_id, clamped, comment, nowIso()]
+    [
+      newId(),
+      holdingId,
+      book.id,
+      raterId,
+      holding.holder_user_id,
+      clamped,
+      comment,
+      nowIso(),
+    ]
   );
 }
 
@@ -988,39 +1037,21 @@ export async function getGroupMembers(
 export const INITIAL_CREDITS = 3;
 
 /**
- * Taking a book you don't own costs the taker credits and pays the owner the
- * same amount. Pass-on ("flow") books are gone for good, so sharing one is a
- * bigger contribution than lending a book that comes back — it's worth more.
+ * Taking any book you don't own costs a flat 1 credit. The owner earns more for
+ * giving a book away than for lending one that comes back:
+ *   - lend (returns): owner +1, taker −1  → net zero, the book just changes hands
+ *   - flow (kept):    owner +2, taker −1  → nets +1 into the club, a thank-you
+ *                                            for donating a book for good
  */
-export const LEND_COST = 1;
-export const FLOW_COST = 2;
+export const BORROW_COST = 1;
+export const LEND_REWARD = 1;
+export const FLOW_REWARD = 2;
 export const BOOK_REVIEW_CREDIT = 1;
 export const COMMUNITY_MESSAGE_DAILY_CREDIT = 1;
 
-/** Credit cost (and owner reward) for taking a book of the given share mode. */
-export function creditCostFor(mode: BookShareMode): number {
-  return mode === "flow" ? FLOW_COST : LEND_COST;
-}
-
-/**
- * Higher-rated books are worth more credit: a well-loved book is a bigger gift
- * to the club. The bonus applies to both sides (taker pays more, owner earns
- * more), so it stays conserved and rating-gaming still can't mint net credit.
- */
-export function qualityBonus(avgStars: number | null): number {
-  if (avgStars == null) return 0;
-  if (avgStars >= 4.5) return 2;
-  if (avgStars >= 3.5) return 1;
-  return 0;
-}
-
-/** Full credit cost for taking a specific book: share mode + quality bonus. */
-export async function creditCostForBook(
-  bookId: string,
-  mode: BookShareMode
-): Promise<number> {
-  const summary = await getBookReviewSummary(bookId);
-  return creditCostFor(mode) + qualityBonus(summary.avg);
+/** Credits the owner earns each time their book is taken by someone else. */
+export function ownerRewardFor(mode: BookShareMode): number {
+  return mode === "flow" ? FLOW_REWARD : LEND_REWARD;
 }
 
 /** Score weights: sharing a book is worth more than it being taken once. */
@@ -1081,7 +1112,16 @@ export async function grantInitialCredits(
     [userId, groupId]
   );
   if (already) return;
-  await addCreditEvent(db, groupId, userId, INITIAL_CREDITS, "starter", null, null, nowIso());
+  await addCreditEvent(
+    db,
+    groupId,
+    userId,
+    INITIAL_CREDITS,
+    "starter",
+    null,
+    null,
+    nowIso()
+  );
 }
 
 async function grantBookReviewCreditIfFirst(
@@ -1098,7 +1138,16 @@ async function grantBookReviewCreditIfFirst(
     [userId, groupId, bookId]
   );
   if (already) return;
-  await addCreditEvent(exec, groupId, userId, BOOK_REVIEW_CREDIT, "review", bookId, null, at);
+  await addCreditEvent(
+    exec,
+    groupId,
+    userId,
+    BOOK_REVIEW_CREDIT,
+    "review",
+    bookId,
+    null,
+    at
+  );
 }
 
 async function grantDailyCommunityCreditIfFirst(
@@ -1158,17 +1207,23 @@ export async function getUserContribution(
   return toContribution(sharedRow?.c ?? 0, lentRow?.c ?? 0);
 }
 
-/** True when the member has at least `cost` credit available. */
+/**
+ * Whether the member may borrow. In "trust" clubs there is no gate, so this is
+ * always true. In "credit" clubs they need at least `cost` credit available.
+ */
 export async function canBorrow(
   userId: string,
   groupId: string,
-  cost: number = LEND_COST
+  cost: number = BORROW_COST
 ): Promise<boolean> {
+  if (!(await isCreditModeOn(groupId))) return true;
   return (await getCreditBalance(userId, groupId)) >= cost;
 }
 
 /** All members ranked by contribution score (highest first). */
-export async function getGroupLeaderboard(groupId: string): Promise<LeaderboardEntry[]> {
+export async function getGroupLeaderboard(
+  groupId: string
+): Promise<LeaderboardEntry[]> {
   const rows = await sql<{
     user_id: string;
     name: string;

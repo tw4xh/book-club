@@ -25,6 +25,13 @@ export interface User {
   created_at: string;
 }
 
+/**
+ * How a club handles borrowing:
+ * - "trust": no gate — anyone can borrow freely (default; fits friend groups).
+ * - "credit": the "lend first, then borrow" credit gate is enforced.
+ */
+export type CreditMode = "trust" | "credit";
+
 export interface Group {
   id: string;
   name: string;
@@ -32,6 +39,7 @@ export interface Group {
   /** Club rules the owner sets; new members must agree before joining. */
   policy: string | null;
   invite_code: string;
+  credit_mode: CreditMode;
   created_at: string;
 }
 
@@ -44,6 +52,8 @@ export interface Membership {
   role: MembershipRole;
   /** When this member agreed to the club policy (null = legacy/no policy). */
   policy_accepted_at: string | null;
+  /** When the founder finished/dismissed the club setup guide (null = still onboarding). */
+  onboarding_dismissed_at: string | null;
   created_at: string;
 }
 

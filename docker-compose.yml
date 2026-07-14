@@ -1,0 +1,30 @@
+# Local development database.
+#
+#   docker compose up -d       # start Postgres in the background
+#   docker compose down        # stop it (data is kept in the named volume)
+#   docker compose down -v     # stop it AND wipe all data
+#
+# Matches the DATABASE_URL in .env.example:
+#   postgres://bookclub:bookclub@localhost:5433/bookclub
+services:
+  db:
+    image: postgres:16
+    container_name: bookclub-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: bookclub
+      POSTGRES_PASSWORD: bookclub
+      POSTGRES_DB: bookclub
+    ports:
+      # Host 5433 -> container 5432, so it never clashes with a system Postgres.
+      - "5433:5432"
+    volumes:
+      - bookclub-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bookclub -d bookclub"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  bookclub-pgdata:
